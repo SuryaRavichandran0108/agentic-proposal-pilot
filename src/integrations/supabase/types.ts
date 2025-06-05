@@ -9,7 +9,431 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      agent_logs: {
+        Row: {
+          action: string
+          agent_name: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          proposal_id: string
+          question_id: string | null
+          triggered_by_user_id: string | null
+        }
+        Insert: {
+          action: string
+          agent_name: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          proposal_id: string
+          question_id?: string | null
+          triggered_by_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          agent_name?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          proposal_id?: string
+          question_id?: string | null
+          triggered_by_user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_logs_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_logs_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_logs_triggered_by_user_id_fkey"
+            columns: ["triggered_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      answers: {
+        Row: {
+          answer_text: string
+          created_at: string
+          generated_by: Database["public"]["Enums"]["answer_generated_by"]
+          id: string
+          question_id: string
+          version_number: number
+        }
+        Insert: {
+          answer_text: string
+          created_at?: string
+          generated_by?: Database["public"]["Enums"]["answer_generated_by"]
+          id?: string
+          question_id: string
+          version_number?: number
+        }
+        Update: {
+          answer_text?: string
+          created_at?: string
+          generated_by?: Database["public"]["Enums"]["answer_generated_by"]
+          id?: string
+          question_id?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clarifications: {
+        Row: {
+          answer_text: string | null
+          answered_at: string | null
+          created_at: string
+          id: string
+          prompt_text: string
+          question_id: string
+          status: Database["public"]["Enums"]["clarification_status"]
+          suggested_by: Database["public"]["Enums"]["clarification_suggested_by"]
+        }
+        Insert: {
+          answer_text?: string | null
+          answered_at?: string | null
+          created_at?: string
+          id?: string
+          prompt_text: string
+          question_id: string
+          status?: Database["public"]["Enums"]["clarification_status"]
+          suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
+        }
+        Update: {
+          answer_text?: string | null
+          answered_at?: string | null
+          created_at?: string
+          id?: string
+          prompt_text?: string
+          question_id?: string
+          status?: Database["public"]["Enums"]["clarification_status"]
+          suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clarifications_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposal_files: {
+        Row: {
+          file_name: string
+          file_type: string
+          file_url: string
+          id: string
+          proposal_id: string
+          status: Database["public"]["Enums"]["file_status"]
+          uploaded_at: string
+          uploaded_by_user_id: string
+        }
+        Insert: {
+          file_name: string
+          file_type: string
+          file_url: string
+          id?: string
+          proposal_id: string
+          status?: Database["public"]["Enums"]["file_status"]
+          uploaded_at?: string
+          uploaded_by_user_id: string
+        }
+        Update: {
+          file_name?: string
+          file_type?: string
+          file_url?: string
+          id?: string
+          proposal_id?: string
+          status?: Database["public"]["Enums"]["file_status"]
+          uploaded_at?: string
+          uploaded_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposal_files_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "proposal_files_uploaded_by_user_id_fkey"
+            columns: ["uploaded_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      proposals: {
+        Row: {
+          client_name: string
+          created_at: string
+          created_by: string
+          due_date: string | null
+          id: string
+          status: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          created_by: string
+          due_date?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          created_by?: string
+          due_date?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["proposal_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proposals_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      questions: {
+        Row: {
+          clarification_answered: boolean
+          clarification_required: boolean
+          confidence_score: number | null
+          created_at: string
+          id: string
+          question_text: string
+          ready_for_drafting: boolean
+          requires_review: boolean
+          reviewed: boolean
+          section_id: string
+          source: Database["public"]["Enums"]["question_source"]
+          updated_at: string
+        }
+        Insert: {
+          clarification_answered?: boolean
+          clarification_required?: boolean
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          question_text: string
+          ready_for_drafting?: boolean
+          requires_review?: boolean
+          reviewed?: boolean
+          section_id: string
+          source?: Database["public"]["Enums"]["question_source"]
+          updated_at?: string
+        }
+        Update: {
+          clarification_answered?: boolean
+          clarification_required?: boolean
+          confidence_score?: number | null
+          created_at?: string
+          id?: string
+          question_text?: string
+          ready_for_drafting?: boolean
+          requires_review?: boolean
+          reviewed?: boolean
+          section_id?: string
+          source?: Database["public"]["Enums"]["question_source"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      review_assignments: {
+        Row: {
+          assigned_to_user_id: string
+          comment: string | null
+          created_at: string
+          id: string
+          question_id: string
+          status: Database["public"]["Enums"]["review_status"]
+          updated_at: string
+        }
+        Insert: {
+          assigned_to_user_id: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          question_id: string
+          status?: Database["public"]["Enums"]["review_status"]
+          updated_at?: string
+        }
+        Update: {
+          assigned_to_user_id?: string
+          comment?: string | null
+          created_at?: string
+          id?: string
+          question_id?: string
+          status?: Database["public"]["Enums"]["review_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_assignments_assigned_to_user_id_fkey"
+            columns: ["assigned_to_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "review_assignments_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sections: {
+        Row: {
+          created_at: string
+          id: string
+          order_index: number
+          proposal_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          order_index: number
+          proposal_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          order_index?: number
+          proposal_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sections_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      submissions: {
+        Row: {
+          format: Database["public"]["Enums"]["submission_format"]
+          id: string
+          proposal_id: string
+          status: Database["public"]["Enums"]["submission_status"]
+          submitted_at: string
+          submitted_by_user_id: string
+          submitted_to: string
+        }
+        Insert: {
+          format?: Database["public"]["Enums"]["submission_format"]
+          id?: string
+          proposal_id: string
+          status?: Database["public"]["Enums"]["submission_status"]
+          submitted_at?: string
+          submitted_by_user_id: string
+          submitted_to: string
+        }
+        Update: {
+          format?: Database["public"]["Enums"]["submission_format"]
+          id?: string
+          proposal_id?: string
+          status?: Database["public"]["Enums"]["submission_status"]
+          submitted_at?: string
+          submitted_by_user_id?: string
+          submitted_to?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "submissions_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "submissions_submitted_by_user_id_fkey"
+            columns: ["submitted_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          created_at: string
+          email: string
+          id: string
+          name: string
+          role: Database["public"]["Enums"]["user_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          id: string
+          name: string
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string
+          role?: Database["public"]["Enums"]["user_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -18,7 +442,16 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      answer_generated_by: "AI" | "SME"
+      clarification_status: "pending" | "sent" | "answered"
+      clarification_suggested_by: "agent" | "user"
+      file_status: "uploaded" | "parsed" | "failed"
+      proposal_status: "draft" | "review" | "submitted"
+      question_source: "parsed" | "client" | "SME"
+      review_status: "pending" | "in_progress" | "completed"
+      submission_format: "PDF" | "DOCX" | "ZIP"
+      submission_status: "submitted" | "failed"
+      user_role: "proposal_manager" | "reviewer" | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -133,6 +566,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      answer_generated_by: ["AI", "SME"],
+      clarification_status: ["pending", "sent", "answered"],
+      clarification_suggested_by: ["agent", "user"],
+      file_status: ["uploaded", "parsed", "failed"],
+      proposal_status: ["draft", "review", "submitted"],
+      question_source: ["parsed", "client", "SME"],
+      review_status: ["pending", "in_progress", "completed"],
+      submission_format: ["PDF", "DOCX", "ZIP"],
+      submission_status: ["submitted", "failed"],
+      user_role: ["proposal_manager", "reviewer", "viewer"],
+    },
   },
 } as const
