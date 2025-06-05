@@ -47,7 +47,23 @@ serve(async (req) => {
     if (trigger === 'parser_completed') {
       if (context.clarifications_needed > 0) {
         nextActions.push('clarification_agent');
+        
+        // Trigger ClarificationAgent
+        try {
+          const { error: clarificationError } = await supabase.functions.invoke('clarification-agent', {
+            body: { proposal_id }
+          });
+
+          if (clarificationError) {
+            console.error('Error triggering clarification agent:', clarificationError);
+          } else {
+            console.log('Successfully triggered ClarificationAgent');
+          }
+        } catch (clarificationErr) {
+          console.error('Failed to trigger ClarificationAgent:', clarificationErr);
+        }
       }
+      
       if (context.reviews_needed > 0) {
         nextActions.push('review_assignment_agent');
       }
