@@ -49,7 +49,7 @@ export function UploadRFPTab() {
       if (proposalError) throw proposalError;
 
       // Create file record (simulating file upload)
-      const { error: fileError } = await supabase
+      const { data: fileRecord, error: fileError } = await supabase
         .from('proposal_files')
         .insert({
           proposal_id: proposal.id,
@@ -58,7 +58,9 @@ export function UploadRFPTab() {
           file_type: file.type,
           file_url: `mock://uploads/${file.name}`, // Mock URL
           status: 'uploaded'
-        });
+        })
+        .select()
+        .single();
 
       if (fileError) throw fileError;
 
@@ -71,8 +73,19 @@ export function UploadRFPTab() {
         metadata: { file_name: file.name, file_size: file.size }
       });
 
-      // Simulate parser agent creating sections and questions
-      await simulateParserAgent(proposal.id);
+      // Trigger ParserAgent via edge function
+      const { error: parserError } = await supabase.functions.invoke('parser-agent', {
+        body: {
+          proposal_id: proposal.id,
+          file_id: fileRecord.id
+        }
+      });
+
+      if (parserError) {
+        console.error('Error triggering ParserAgent:', parserError);
+        toast.error('Failed to trigger ParserAgent: ' + parserError.message);
+        return;
+      }
 
       toast.success('RFP uploaded successfully! ParserAgent is processing...');
       
@@ -83,59 +96,11 @@ export function UploadRFPTab() {
       setFile(null);
       
     } catch (error: any) {
+      console.error('Upload error:', error);
       toast.error(error.message);
     } finally {
       setUploading(false);
     }
-  };
-
-  const simulateParserAgent = async (proposalId: string) => {
-    // Create mock sections
-    const sections = [
-      { title: 'Company Overview', order_index: 1 },
-      { title: 'Technical Requirements', order_index: 2 },
-      { title: 'Project Timeline', order_index: 3 },
-      { title: 'Budget and Pricing', order_index: 4 }
-    ];
-
-    for (const section of sections) {
-      const { data: sectionData, error } = await supabase
-        .from('sections')
-        .insert({ ...section, proposal_id: proposalId })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Create mock questions for each section
-      const questions = [
-        'Describe your company\'s experience with similar projects',
-        'What is your technical approach to this requirement?',
-        'How many team members will be assigned to this project?'
-      ];
-
-      for (let i = 0; i < questions.length; i++) {
-        const clarificationRequired = i === 0; // First question needs clarification
-        const requiresReview = i === 1; // Second question needs SME review
-
-        await supabase.from('questions').insert({
-          section_id: sectionData.id,
-          question_text: questions[i],
-          source: 'parsed',
-          clarification_required: clarificationRequired,
-          requires_review: requiresReview,
-          confidence_score: clarificationRequired ? 0.6 : 0.8
-        });
-      }
-    }
-
-    // Log parser completion
-    await supabase.from('agent_logs').insert({
-      agent_name: 'ParserAgent',
-      action: 'Parsed RFP structure and identified questions',
-      proposal_id: proposalId,
-      metadata: { sections_created: sections.length, questions_created: sections.length * 3 }
-    });
   };
 
   return (
