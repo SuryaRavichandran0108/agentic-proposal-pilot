@@ -63,7 +63,10 @@ export function useAuth() {
       email,
       password,
       options: {
-        data: { name, role }
+        data: { 
+          name, 
+          role 
+        }
       }
     });
     return { error };
