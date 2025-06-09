@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -238,7 +237,7 @@ export function DraftViewerTab() {
                                     Clarification Used
                                   </Badge>
                                 )}
-                                {answer?.confidence_score && getConfidenceBadge(answer.confidence_score)}
+                                {question.confidence_score && getConfidenceBadge(question.confidence_score)}
                                 {answer?.generated_by === 'SME' && (
                                   <Badge variant="outline" className="bg-purple-50 text-purple-700">
                                     <Edit3 className="mr-1 h-3 w-3" />
