@@ -67,7 +67,45 @@ serve(async (req) => {
       if (context.reviews_needed > 0) {
         nextActions.push('review_assignment_agent');
       }
+      
+      // If no clarifications needed, trigger content generation immediately
+      if (context.clarifications_needed === 0) {
+        nextActions.push('content_agent');
+        
+        try {
+          const { error: contentError } = await supabase.functions.invoke('content-agent', {
+            body: { proposal_id }
+          });
+
+          if (contentError) {
+            console.error('Error triggering content agent:', contentError);
+          } else {
+            console.log('Successfully triggered ContentAgent');
+          }
+        } catch (contentErr) {
+          console.error('Failed to trigger ContentAgent:', contentErr);
+        }
+      }
+    }
+
+    // Handle all clarifications answered trigger
+    if (trigger === 'all_clarifications_answered') {
       nextActions.push('content_agent');
+      
+      // Trigger ContentAgent to generate answers
+      try {
+        const { error: contentError } = await supabase.functions.invoke('content-agent', {
+          body: { proposal_id }
+        });
+
+        if (contentError) {
+          console.error('Error triggering content agent:', contentError);
+        } else {
+          console.log('Successfully triggered ContentAgent after clarifications completed');
+        }
+      } catch (contentErr) {
+        console.error('Failed to trigger ContentAgent:', contentErr);
+      }
     }
 
     console.log(`Orchestrator determined next actions: ${nextActions.join(', ')}`);
