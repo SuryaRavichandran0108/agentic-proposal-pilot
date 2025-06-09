@@ -30,7 +30,32 @@ export function ClarificationsTab() {
             )
           )
         `)
+        .in('status', ['pending', 'sent'])
         .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    }
+  });
+
+  const { data: answeredClarifications } = useQuery({
+    queryKey: ['answered-clarifications'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clarifications')
+        .select(`
+          *,
+          questions (
+            *,
+            sections (
+              *,
+              proposals (*)
+            )
+          )
+        `)
+        .eq('status', 'answered')
+        .order('answered_at', { ascending: false })
+        .limit(10);
       
       if (error) throw error;
       return data;
@@ -39,7 +64,11 @@ export function ClarificationsTab() {
 
   const submitResponseMutation = useMutation({
     mutationFn: async ({ clarificationId, response }: { clarificationId: string; response: string }) => {
-      const { error } = await supabase
+      const clarification = clarifications?.find(c => c.id === clarificationId);
+      if (!clarification) throw new Error('Clarification not found');
+
+      // Update clarification with answer
+      const { error: clarificationError } = await supabase
         .from('clarifications')
         .update({
           answer_text: response,
@@ -48,27 +77,84 @@ export function ClarificationsTab() {
         })
         .eq('id', clarificationId);
 
-      if (error) throw error;
+      if (clarificationError) throw clarificationError;
 
-      // Log the action
-      const clarification = clarifications?.find(c => c.id === clarificationId);
-      if (clarification) {
-        await supabase.from('agent_logs').insert({
-          agent_name: 'User',
-          action: 'Provided clarification response',
+      // Update the question to mark clarification as answered
+      const { error: questionError } = await supabase
+        .from('questions')
+        .update({
+          clarification_answered: true
+        })
+        .eq('id', clarification.question_id);
+
+      if (questionError) throw questionError;
+
+      // Log the user action
+      const { error: logError } = await supabase
+        .from('agent_logs')
+        .insert({
+          agent_name: 'user_input',
+          action: 'clarification_answered',
           proposal_id: clarification.questions.sections.proposals.id,
           question_id: clarification.question_id,
-          triggered_by_user_id: profile?.id
+          triggered_by_user_id: profile?.id,
+          metadata: {
+            clarification_id: clarificationId,
+            question_id: clarification.question_id,
+            user_input: response,
+            timestamp: new Date().toISOString()
+          }
         });
+
+      if (logError) {
+        console.error('Error logging clarification response:', logError);
+      }
+
+      // Check if all clarifications for this proposal are now answered
+      const { data: remainingClarifications, error: countError } = await supabase
+        .from('clarifications')
+        .select('id, questions!inner(sections!inner(proposals!inner(id)))')
+        .eq('questions.sections.proposals.id', clarification.questions.sections.proposals.id)
+        .in('status', ['pending', 'sent']);
+
+      if (countError) {
+        console.error('Error checking remaining clarifications:', countError);
+        return;
+      }
+
+      // If no pending/sent clarifications remain, trigger the orchestrator
+      if (remainingClarifications.length === 1) { // This one will be marked as answered
+        try {
+          const { error: orchestratorError } = await supabase.functions.invoke('orchestrator-agent', {
+            body: {
+              proposal_id: clarification.questions.sections.proposals.id,
+              trigger: 'all_clarifications_answered',
+              context: {
+                clarifications_answered: true,
+                ready_for_content_generation: true
+              }
+            }
+          });
+
+          if (orchestratorError) {
+            console.error('Error triggering orchestrator:', orchestratorError);
+          } else {
+            console.log('Successfully triggered orchestrator for content generation');
+          }
+        } catch (orchestratorErr) {
+          console.error('Failed to trigger orchestrator:', orchestratorErr);
+        }
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['clarifications'] });
-      toast.success('Response submitted successfully!');
+      queryClient.invalidateQueries({ queryKey: ['answered-clarifications'] });
+      toast.success('Clarification response submitted successfully!');
       setResponses({});
     },
     onError: (error: any) => {
-      toast.error(error.message);
+      console.error('Error submitting clarification response:', error);
+      toast.error('Failed to submit response: ' + error.message);
     }
   });
 
@@ -85,8 +171,8 @@ export function ClarificationsTab() {
     return <div>Loading clarifications...</div>;
   }
 
-  const pendingClarifications = clarifications?.filter(c => c.status === 'pending') || [];
-  const answeredClarifications = clarifications?.filter(c => c.status === 'answered') || [];
+  const pendingClarifications = clarifications || [];
+  const completedClarifications = answeredClarifications || [];
 
   return (
     <div className="space-y-6">
@@ -98,7 +184,7 @@ export function ClarificationsTab() {
       </div>
 
       <div className="grid gap-6">
-        {pendingClarifications.length === 0 && answeredClarifications.length === 0 ? (
+        {pendingClarifications.length === 0 && completedClarifications.length === 0 ? (
           <Card>
             <CardContent className="text-center py-12">
               <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
@@ -163,10 +249,10 @@ export function ClarificationsTab() {
               </Card>
             ))}
 
-            {answeredClarifications.length > 0 && (
+            {completedClarifications.length > 0 && (
               <div className="mt-8">
-                <h3 className="text-lg font-medium mb-4">Completed Clarifications</h3>
-                {answeredClarifications.map((clarification) => (
+                <h3 className="text-lg font-medium mb-4">Recently Completed Clarifications</h3>
+                {completedClarifications.map((clarification) => (
                   <Card key={clarification.id} className="mb-4">
                     <CardHeader>
                       <div className="flex items-start justify-between">
@@ -182,6 +268,10 @@ export function ClarificationsTab() {
                       <div className="space-y-3">
                         <div>
                           <span className="font-medium">Question: </span>
+                          <span className="text-gray-700">{clarification.questions.question_text}</span>
+                        </div>
+                        <div>
+                          <span className="font-medium">Clarification: </span>
                           <span className="text-gray-700">{clarification.prompt_text}</span>
                         </div>
                         <div>
