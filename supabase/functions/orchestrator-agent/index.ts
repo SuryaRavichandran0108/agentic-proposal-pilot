@@ -81,6 +81,23 @@ serve(async (req) => {
             console.error('Error triggering content agent:', contentError);
           } else {
             console.log('Successfully triggered ContentAgent');
+            
+            // After ContentAgent completes, trigger ReviewerAssignmentAgent
+            nextActions.push('reviewer_assignment_agent');
+            
+            try {
+              const { error: reviewerError } = await supabase.functions.invoke('reviewer-assignment-agent', {
+                body: { proposal_id }
+              });
+
+              if (reviewerError) {
+                console.error('Error triggering reviewer assignment agent:', reviewerError);
+              } else {
+                console.log('Successfully triggered ReviewerAssignmentAgent');
+              }
+            } catch (reviewerErr) {
+              console.error('Failed to trigger ReviewerAssignmentAgent:', reviewerErr);
+            }
           }
         } catch (contentErr) {
           console.error('Failed to trigger ContentAgent:', contentErr);
@@ -102,9 +119,45 @@ serve(async (req) => {
           console.error('Error triggering content agent:', contentError);
         } else {
           console.log('Successfully triggered ContentAgent after clarifications completed');
+          
+          // After ContentAgent completes, trigger ReviewerAssignmentAgent
+          nextActions.push('reviewer_assignment_agent');
+          
+          try {
+            const { error: reviewerError } = await supabase.functions.invoke('reviewer-assignment-agent', {
+              body: { proposal_id }
+            });
+
+            if (reviewerError) {
+              console.error('Error triggering reviewer assignment agent:', reviewerError);
+            } else {
+              console.log('Successfully triggered ReviewerAssignmentAgent after content generation');
+            }
+          } catch (reviewerErr) {
+            console.error('Failed to trigger ReviewerAssignmentAgent:', reviewerErr);
+          }
         }
       } catch (contentErr) {
         console.error('Failed to trigger ContentAgent:', contentErr);
+      }
+    }
+
+    // Handle manual reviewer assignment trigger
+    if (trigger === 'manual_review_flagged') {
+      nextActions.push('reviewer_assignment_agent');
+      
+      try {
+        const { error: reviewerError } = await supabase.functions.invoke('reviewer-assignment-agent', {
+          body: { proposal_id }
+        });
+
+        if (reviewerError) {
+          console.error('Error triggering reviewer assignment agent:', reviewerError);
+        } else {
+          console.log('Successfully triggered ReviewerAssignmentAgent for manual review');
+        }
+      } catch (reviewerErr) {
+        console.error('Failed to trigger ReviewerAssignmentAgent:', reviewerErr);
       }
     }
 
