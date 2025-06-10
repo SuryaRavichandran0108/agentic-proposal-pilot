@@ -18,11 +18,19 @@ export function ProposalDashboard() {
   const availableTabs = [
     { value: 'dashboard', label: 'Dashboard', show: true },
     { value: 'upload', label: 'Upload RFP', show: isProposalManager },
-    { value: 'clarifications', label: 'Clarifications', show: true },
+    { value: 'clarifications', label: 'Clarifications', show: isProposalManager },
     { value: 'draft', label: 'Draft Viewer', show: true },
     { value: 'review', label: 'SME Review', show: isReviewer },
     { value: 'builder', label: 'Proposal Builder', show: isProposalManager },
   ].filter(tab => tab.show);
+
+  // If user tries to access a tab they don't have permission for, redirect to dashboard
+  React.useEffect(() => {
+    const hasAccessToCurrentTab = availableTabs.some(tab => tab.value === activeTab);
+    if (!hasAccessToCurrentTab) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, availableTabs]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -47,9 +55,11 @@ export function ProposalDashboard() {
             </TabsContent>
           )}
 
-          <TabsContent value="clarifications" className="mt-6">
-            <ClarificationsTab />
-          </TabsContent>
+          {isProposalManager && (
+            <TabsContent value="clarifications" className="mt-6">
+              <ClarificationsTab />
+            </TabsContent>
+          )}
 
           <TabsContent value="draft" className="mt-6">
             <DraftViewerTab />

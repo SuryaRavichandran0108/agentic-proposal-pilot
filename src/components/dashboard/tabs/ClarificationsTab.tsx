@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,12 +7,25 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthContext } from '@/components/auth/AuthProvider';
 import { toast } from 'sonner';
-import { MessageSquare, Send } from 'lucide-react';
+import { MessageSquare, Send, ShieldX } from 'lucide-react';
 
 export function ClarificationsTab() {
   const [responses, setResponses] = useState<Record<string, string>>({});
-  const { profile } = useAuthContext();
+  const { profile, isProposalManager } = useAuthContext();
   const queryClient = useQueryClient();
+
+  // Access control - only proposal managers can view this tab
+  if (!isProposalManager) {
+    return (
+      <Card>
+        <CardContent className="text-center py-12">
+          <ShieldX className="mx-auto h-12 w-12 text-red-400" />
+          <h3 className="mt-4 text-lg font-medium text-red-600">Access Denied</h3>
+          <p className="text-gray-500">Only Proposal Managers can access clarifications</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const { data: clarifications, isLoading } = useQuery({
     queryKey: ['clarifications'],
