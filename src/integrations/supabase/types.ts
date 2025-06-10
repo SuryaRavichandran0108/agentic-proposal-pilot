@@ -448,7 +448,11 @@ export type Database = {
       file_status: "uploaded" | "parsed" | "failed"
       proposal_status: "draft" | "review" | "submitted"
       question_source: "parsed" | "client" | "SME"
-      review_status: "pending" | "in_progress" | "completed"
+      review_status:
+        | "pending"
+        | "in_progress"
+        | "completed"
+        | "rework_requested"
       submission_format: "PDF" | "DOCX" | "ZIP"
       submission_status: "submitted" | "failed"
       user_role: "proposal_manager" | "reviewer" | "viewer"
@@ -573,7 +577,12 @@ export const Constants = {
       file_status: ["uploaded", "parsed", "failed"],
       proposal_status: ["draft", "review", "submitted"],
       question_source: ["parsed", "client", "SME"],
-      review_status: ["pending", "in_progress", "completed"],
+      review_status: [
+        "pending",
+        "in_progress",
+        "completed",
+        "rework_requested",
+      ],
       submission_format: ["PDF", "DOCX", "ZIP"],
       submission_status: ["submitted", "failed"],
       user_role: ["proposal_manager", "reviewer", "viewer"],

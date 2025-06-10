@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 interface ReviewAssignment {
   id: string;
   question_id: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed' | 'rework_requested';
   comment: string | null;
   created_at: string;
   questions: {
@@ -177,7 +177,7 @@ export function SMEReviewTab() {
       const { error } = await supabase
         .from('review_assignments')
         .update({ 
-          status: 'rework_requested',
+          status: 'rework_requested' as const,
           comment,
           updated_at: new Date().toISOString()
         })
