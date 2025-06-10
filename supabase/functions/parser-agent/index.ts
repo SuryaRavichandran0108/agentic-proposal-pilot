@@ -26,98 +26,90 @@ serve(async (req) => {
     // Simulate parsing delay
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    // Mock sections to create
-    const mockSections = [
-      { title: "Company Overview", order_index: 1 },
-      { title: "Product Requirements", order_index: 2 },
-      { title: "Technical Specifications", order_index: 3 },
-      { title: "Project Timeline & Budget", order_index: 4 }
+    // Mock questions extracted from real-world RFP Section 4 (like Union County RFP)
+    const mockRFPQuestions = [
+      "4.1.1 Provide a detailed description of your company's organizational structure, including number of employees, years in business, and primary business focus.",
+      "4.1.2 Describe your company's experience with similar municipal software implementations in the past five years, including client references.",
+      "4.1.3 Detail your proposed project timeline from contract execution to full system deployment and user training completion.",
+      "4.1.4 Provide comprehensive information about your software's technical architecture, database requirements, and system integration capabilities.",
+      "4.1.5 Describe your data migration approach and methodology for transferring existing municipal data to your system.",
+      "4.2.1 Outline your ongoing support structure, including help desk hours, response time commitments, and escalation procedures.",
+      "4.2.2 Provide detailed pricing for software licensing, implementation services, training, and ongoing maintenance for a 5-year period.",
+      "4.2.3 Describe your disaster recovery and business continuity capabilities, including backup procedures and data security measures.",
+      "4.2.4 Detail your user training program, including initial training, ongoing education, and documentation provided.",
+      "4.2.5 Explain your software update and enhancement process, including frequency of updates and user notification procedures.",
+      "4.2.6 Provide information about third-party integrations available with your system, particularly with financial and HR systems.",
+      "4.2.7 Describe your quality assurance testing procedures and how you ensure system reliability and performance.",
+      "4.2.8 Detail your implementation methodology and project management approach, including key milestones and deliverables.",
+      "4.2.9 Provide information about system scalability and your ability to accommodate future growth in users and data volume.",
+      "4.2.10 Describe your approach to customization and configuration to meet specific municipal requirements and workflows."
     ];
 
-    // Mock questions for each section
-    const mockQuestionsBySection = [
-      [
-        "Describe your company's history and core competencies",
-        "What is your annual revenue and number of employees?",
-        "Provide references from similar projects"
-      ],
-      [
-        "What are the key features required for this product?",
-        "What is the expected user capacity and performance requirements?",
-        "Are there any specific compliance requirements?"
-      ],
-      [
-        "What technology stack do you prefer for this solution?",
-        "What are the security and data protection requirements?",
-        "Do you require cloud deployment or on-premises installation?"
-      ],
-      [
-        "What is the expected project timeline and key milestones?",
-        "What is the total budget allocated for this project?",
-        "What are the payment terms and schedule?"
-      ]
-    ];
+    // Create single section for RFP Questions
+    const { data: sectionData, error: sectionError } = await supabase
+      .from('sections')
+      .insert({
+        proposal_id,
+        title: 'RFP Questions',
+        order_index: 1
+      })
+      .select()
+      .single();
 
-    // Start transaction by creating sections and questions
-    const createdSections = [];
+    if (sectionError) {
+      console.error('Error creating section:', sectionError);
+      throw sectionError;
+    }
+
+    console.log(`Created section: ${sectionData.title}`);
+
+    // Create questions for this section
     const createdQuestions = [];
     let clarificationCount = 0;
     let reviewCount = 0;
 
-    for (let i = 0; i < mockSections.length; i++) {
-      // Create section
-      const { data: sectionData, error: sectionError } = await supabase
-        .from('sections')
-        .insert({
-          proposal_id,
-          title: mockSections[i].title,
-          order_index: mockSections[i].order_index
-        })
+    for (let i = 0; i < mockRFPQuestions.length; i++) {
+      const questionText = mockRFPQuestions[i];
+      
+      // Flag vague or complex questions for clarification
+      const needsClarification = clarificationCount < 2 && (
+        questionText.includes('detailed description') || 
+        questionText.includes('comprehensive information') ||
+        questionText.includes('approach to customization')
+      );
+      
+      // Flag technical or complex questions for review
+      const needsReview = reviewCount < 2 && !needsClarification && (
+        questionText.includes('technical architecture') ||
+        questionText.includes('disaster recovery') ||
+        questionText.includes('quality assurance')
+      );
+      
+      if (needsClarification) clarificationCount++;
+      if (needsReview) reviewCount++;
+
+      const questionData = {
+        section_id: sectionData.id,
+        question_text: questionText,
+        source: 'parsed' as const,
+        clarification_required: needsClarification,
+        requires_review: needsReview,
+        confidence_score: Math.round((Math.random() * 0.25 + 0.70) * 100) / 100 // 0.70 to 0.95
+      };
+
+      const { data: question, error: questionError } = await supabase
+        .from('questions')
+        .insert(questionData)
         .select()
         .single();
 
-      if (sectionError) {
-        console.error('Error creating section:', sectionError);
-        throw sectionError;
+      if (questionError) {
+        console.error('Error creating question:', questionError);
+        throw questionError;
       }
 
-      createdSections.push(sectionData);
-      console.log(`Created section: ${sectionData.title}`);
-
-      // Create questions for this section
-      const questionsForSection = mockQuestionsBySection[i];
-      
-      for (let j = 0; j < questionsForSection.length; j++) {
-        const questionIndex = i * 3 + j; // Global question index
-        const needsClarification = clarificationCount < 2 && Math.random() < 0.3;
-        const needsReview = reviewCount < 2 && !needsClarification && Math.random() < 0.3;
-        
-        if (needsClarification) clarificationCount++;
-        if (needsReview) reviewCount++;
-
-        const questionData = {
-          section_id: sectionData.id,
-          question_text: questionsForSection[j],
-          source: 'parsed' as const,
-          clarification_required: needsClarification,
-          requires_review: needsReview,
-          confidence_score: Math.round((Math.random() * 0.35 + 0.6) * 100) / 100 // 0.6 to 0.95
-        };
-
-        const { data: question, error: questionError } = await supabase
-          .from('questions')
-          .insert(questionData)
-          .select()
-          .single();
-
-        if (questionError) {
-          console.error('Error creating question:', questionError);
-          throw questionError;
-        }
-
-        createdQuestions.push(question);
-        console.log(`Created question: ${question.question_text} (clarification: ${needsClarification}, review: ${needsReview})`);
-      }
+      createdQuestions.push(question);
+      console.log(`Created question: ${question.question_text.substring(0, 50)}... (clarification: ${needsClarification}, review: ${needsReview})`);
     }
 
     // Ensure we have exactly 2 clarifications and 2 reviews
@@ -177,15 +169,17 @@ serve(async (req) => {
       .from('agent_logs')
       .insert({
         agent_name: 'parser_agent',
-        action: 'extracted_sections_and_questions',
+        action: 'extracted_rfp_questions_section_4',
         proposal_id,
         metadata: {
-          sections_created: createdSections.length,
+          sections_created: 1,
           questions_created: createdQuestions.length,
           clarifications_flagged: clarificationCount,
           reviews_flagged: reviewCount,
           file_id,
-          processing_time_ms: 1000
+          processing_time_ms: 1000,
+          sections_parsed: ['4.1', '4.2'],
+          extraction_method: 'numbered_questions_only'
         }
       });
 
@@ -201,7 +195,7 @@ serve(async (req) => {
           proposal_id,
           trigger: 'parser_completed',
           context: {
-            sections_created: createdSections.length,
+            sections_created: 1,
             questions_created: createdQuestions.length,
             clarifications_needed: clarificationCount,
             reviews_needed: reviewCount
@@ -218,18 +212,19 @@ serve(async (req) => {
       // Continue without failing
     }
 
-    console.log(`ParserAgent completed successfully for proposal ${proposal_id}`);
+    console.log(`ParserAgent completed successfully for proposal ${proposal_id} - extracted ${createdQuestions.length} RFP questions from Section 4`);
     
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'RFP parsed successfully',
+        message: 'RFP parsed successfully - Section 4 questions extracted',
         data: {
           proposal_id,
-          sections_created: createdSections.length,
+          sections_created: 1,
           questions_created: createdQuestions.length,
           clarifications_flagged: clarificationCount,
-          reviews_flagged: reviewCount
+          reviews_flagged: reviewCount,
+          sections_parsed: ['4.1', '4.2']
         }
       }),
       {
