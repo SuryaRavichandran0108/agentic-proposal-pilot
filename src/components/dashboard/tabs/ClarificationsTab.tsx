@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,10 +8,11 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthContext } from '@/components/auth/AuthProvider';
 import { toast } from 'sonner';
-import { MessageSquare, Send, ShieldX } from 'lucide-react';
+import { MessageSquare, Send, ShieldX, AlertCircle } from 'lucide-react';
 
 export function ClarificationsTab() {
   const [responses, setResponses] = useState<Record<string, string>>({});
+  const [activeProposalId, setActiveProposalId] = useState<string | null>(null);
   const { profile, isProposalManager } = useAuthContext();
   const queryClient = useQueryClient();
 
@@ -27,51 +29,106 @@ export function ClarificationsTab() {
     );
   }
 
-  const { data: clarifications, isLoading } = useQuery({
-    queryKey: ['clarifications'],
+  // Fetch user's proposals to get the active one
+  const { data: proposals } = useQuery({
+    queryKey: ['user-proposals'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('clarifications')
-        .select(`
-          *,
-          questions (
-            *,
-            sections (
-              *,
-              proposals (*)
-            )
-          )
-        `)
-        .in('status', ['pending', 'sent'])
+        .from('proposals')
+        .select('id, title, client_name, status')
+        .eq('created_by', profile?.id)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
       return data;
-    }
+    },
+    enabled: !!profile?.id
   });
 
-  const { data: answeredClarifications } = useQuery({
-    queryKey: ['answered-clarifications'],
+  // Auto-select the first proposal if none is selected
+  React.useEffect(() => {
+    if (proposals && proposals.length > 0 && !activeProposalId) {
+      setActiveProposalId(proposals[0].id);
+    }
+  }, [proposals, activeProposalId]);
+
+  // Fetch clarifications for the active proposal
+  const { data: clarifications, isLoading, error } = useQuery({
+    queryKey: ['clarifications', activeProposalId],
     queryFn: async () => {
+      if (!activeProposalId) return [];
+
       const { data, error } = await supabase
         .from('clarifications')
         .select(`
-          *,
+          id,
+          prompt_text,
+          status,
+          created_at,
+          suggested_by,
           questions (
-            *,
+            id,
+            question_text,
             sections (
-              *,
-              proposals (*)
+              id,
+              title,
+              proposal_id
+            )
+          )
+        `)
+        .eq('status', 'pending')
+        .eq('suggested_by', 'agent')
+        .eq('questions.sections.proposal_id', activeProposalId)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('Error fetching clarifications:', error);
+        throw error;
+      }
+      
+      // Filter out any clarifications that don't belong to the active proposal
+      const filteredData = data?.filter(clarification => 
+        clarification.questions?.sections?.proposal_id === activeProposalId
+      ) || [];
+      
+      console.log('Fetched clarifications for proposal:', activeProposalId, filteredData);
+      return filteredData;
+    },
+    enabled: !!activeProposalId
+  });
+
+  // Fetch answered clarifications for display
+  const { data: answeredClarifications } = useQuery({
+    queryKey: ['answered-clarifications', activeProposalId],
+    queryFn: async () => {
+      if (!activeProposalId) return [];
+
+      const { data, error } = await supabase
+        .from('clarifications')
+        .select(`
+          id,
+          prompt_text,
+          answer_text,
+          answered_at,
+          questions (
+            id,
+            question_text,
+            sections (
+              proposal_id
             )
           )
         `)
         .eq('status', 'answered')
+        .eq('questions.sections.proposal_id', activeProposalId)
         .order('answered_at', { ascending: false })
-        .limit(10);
+        .limit(5);
       
       if (error) throw error;
-      return data;
-    }
+      return data?.filter(clarification => 
+        clarification.questions?.sections?.proposal_id === activeProposalId
+      ) || [];
+    },
+    enabled: !!activeProposalId
   });
 
   const submitResponseMutation = useMutation({
@@ -97,7 +154,7 @@ export function ClarificationsTab() {
         .update({
           clarification_answered: true
         })
-        .eq('id', clarification.question_id);
+        .eq('id', clarification.questions.id);
 
       if (questionError) throw questionError;
 
@@ -107,12 +164,12 @@ export function ClarificationsTab() {
         .insert({
           agent_name: 'user_input',
           action: 'clarification_answered',
-          proposal_id: clarification.questions.sections.proposals.id,
-          question_id: clarification.question_id,
+          proposal_id: activeProposalId!,
+          question_id: clarification.questions.id,
           triggered_by_user_id: profile?.id,
           metadata: {
             clarification_id: clarificationId,
-            question_id: clarification.question_id,
+            question_id: clarification.questions.id,
             user_input: response,
             timestamp: new Date().toISOString()
           }
@@ -125,8 +182,8 @@ export function ClarificationsTab() {
       // Check if all clarifications for this proposal are now answered
       const { data: remainingClarifications, error: countError } = await supabase
         .from('clarifications')
-        .select('id, questions!inner(sections!inner(proposals!inner(id)))')
-        .eq('questions.sections.proposals.id', clarification.questions.sections.proposals.id)
+        .select('id, questions!inner(sections!inner(proposal_id))')
+        .eq('questions.sections.proposal_id', activeProposalId!)
         .in('status', ['pending', 'sent']);
 
       if (countError) {
@@ -139,7 +196,7 @@ export function ClarificationsTab() {
         try {
           const { error: orchestratorError } = await supabase.functions.invoke('orchestrator-agent', {
             body: {
-              proposal_id: clarification.questions.sections.proposals.id,
+              proposal_id: activeProposalId!,
               trigger: 'all_clarifications_answered',
               context: {
                 clarifications_answered: true,
@@ -179,8 +236,31 @@ export function ClarificationsTab() {
     submitResponseMutation.mutate({ clarificationId, response });
   };
 
+  const activeProposal = proposals?.find(p => p.id === activeProposalId);
+
   if (isLoading) {
-    return <div>Loading clarifications...</div>;
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-gray-500">Loading clarifications...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="text-center py-12">
+          <AlertCircle className="mx-auto h-12 w-12 text-red-400" />
+          <h3 className="mt-4 text-lg font-medium text-red-600">Error Loading Clarifications</h3>
+          <p className="text-gray-500 mt-2">
+            {error instanceof Error ? error.message : 'Unable to fetch clarifications. Please check your permissions.'}
+          </p>
+        </CardContent>
+      </Card>
+    );
   }
 
   const pendingClarifications = clarifications || [];
@@ -189,10 +269,32 @@ export function ClarificationsTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold">Clarification Requests</h2>
-        <Badge variant="secondary">
-          {pendingClarifications.length} pending
-        </Badge>
+        <div>
+          <h2 className="text-2xl font-bold">Clarification Requests</h2>
+          {activeProposal && (
+            <p className="text-gray-600 mt-1">
+              {activeProposal.title} - {activeProposal.client_name}
+            </p>
+          )}
+        </div>
+        <div className="flex items-center gap-4">
+          {proposals && proposals.length > 1 && (
+            <select
+              value={activeProposalId || ''}
+              onChange={(e) => setActiveProposalId(e.target.value)}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+            >
+              {proposals.map((proposal) => (
+                <option key={proposal.id} value={proposal.id}>
+                  {proposal.title}
+                </option>
+              ))}
+            </select>
+          )}
+          <Badge variant="secondary">
+            {pendingClarifications.length} pending
+          </Badge>
+        </div>
       </div>
 
       <div className="grid gap-6">
@@ -200,8 +302,13 @@ export function ClarificationsTab() {
           <Card>
             <CardContent className="text-center py-12">
               <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-4 text-lg font-medium">No clarifications yet</h3>
-              <p className="text-gray-500">Upload an RFP to get AI-generated clarification requests</p>
+              <h3 className="mt-4 text-lg font-medium">No clarifications available for this proposal</h3>
+              <p className="text-gray-500">
+                {proposals?.length === 0 
+                  ? 'Upload an RFP to get AI-generated clarification requests'
+                  : 'All clarification requests for this proposal have been addressed'
+                }
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -212,7 +319,7 @@ export function ClarificationsTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <CardTitle className="text-lg">
-                        {clarification.questions.sections.proposals.title}
+                        Clarification Required
                       </CardTitle>
                       <CardDescription>
                         Section: {clarification.questions.sections.title}
@@ -269,7 +376,7 @@ export function ClarificationsTab() {
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <CardTitle className="text-base">
-                          {clarification.questions.sections.proposals.title}
+                          Clarification Completed
                         </CardTitle>
                         <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                           Answered
