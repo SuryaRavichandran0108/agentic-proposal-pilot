@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,7 +51,7 @@ export function ClarificationsTab() {
     }
   }, [proposals, activeProposalId]);
 
-  // Fetch clarifications for the active proposal with improved query
+  // Fetch clarifications for the active proposal with corrected query
   const { data: clarifications, isLoading, error } = useQuery({
     queryKey: ['clarifications', activeProposalId],
     queryFn: async () => {
@@ -60,7 +59,7 @@ export function ClarificationsTab() {
 
       console.log('Fetching clarifications for proposal:', activeProposalId);
 
-      // First, let's get all clarifications with the proper join
+      // Fixed query using proper syntax for nested filtering
       const { data, error } = await supabase
         .from('clarifications')
         .select(`
@@ -80,7 +79,7 @@ export function ClarificationsTab() {
           )
         `)
         .eq('suggested_by', 'agent')
-        .eq('questions.sections.proposal_id', activeProposalId)
+        .contains('questions.sections', { proposal_id: activeProposalId })
         .order('created_at', { ascending: false });
       
       if (error) {
@@ -126,7 +125,7 @@ export function ClarificationsTab() {
           )
         `)
         .eq('status', 'answered')
-        .eq('questions.sections.proposal_id', activeProposalId)
+        .contains('questions.sections', { proposal_id: activeProposalId })
         .order('answered_at', { ascending: false })
         .limit(5);
       
@@ -156,7 +155,7 @@ export function ClarificationsTab() {
             )
           )
         `)
-        .eq('questions.sections.proposal_id', activeProposalId);
+        .contains('questions.sections', { proposal_id: activeProposalId });
       
       if (error) {
         console.error('Debug query error:', error);
@@ -221,7 +220,7 @@ export function ClarificationsTab() {
       const { data: remainingClarifications, error: countError } = await supabase
         .from('clarifications')
         .select('id, questions!inner(sections!inner(proposal_id))')
-        .eq('questions.sections.proposal_id', activeProposalId!)
+        .contains('questions.sections', { proposal_id: activeProposalId! })
         .in('status', ['pending', 'sent']);
 
       if (countError) {
