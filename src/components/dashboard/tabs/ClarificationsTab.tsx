@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -51,7 +52,7 @@ export function ClarificationsTab() {
     }
   }, [proposals, activeProposalId]);
 
-  // Fetch clarifications for the active proposal with corrected query
+  // Fetch clarifications using the secure function
   const { data: clarifications, isLoading, error } = useQuery({
     queryKey: ['clarifications', activeProposalId],
     queryFn: async () => {
@@ -59,46 +60,29 @@ export function ClarificationsTab() {
 
       console.log('Fetching clarifications for proposal:', activeProposalId);
 
-      // Fixed query using proper syntax for nested filtering
+      // Use the secure function to get flattened clarification data
       const { data, error } = await supabase
-        .from('clarifications')
-        .select(`
-          id,
-          prompt_text,
-          status,
-          created_at,
-          suggested_by,
-          questions!inner (
-            id,
-            question_text,
-            sections!inner (
-              id,
-              title,
-              proposal_id
-            )
-          )
-        `)
-        .eq('suggested_by', 'agent')
-        .contains('questions.sections', { proposal_id: activeProposalId })
-        .order('created_at', { ascending: false });
+        .rpc('get_clarifications_for_user');
       
       if (error) {
         console.error('Error fetching clarifications:', error);
         throw error;
       }
       
-      console.log('Raw clarifications data:', data);
+      console.log('Raw clarifications data from function:', data);
       
-      // Filter to only show pending clarifications (not answered or rejected)
-      const pendingClarifications = data?.filter(clarification => 
-        clarification.status === 'pending'
+      // Filter for the active proposal and pending status
+      const proposalClarifications = data?.filter(clarification => 
+        clarification.proposal_id === activeProposalId &&
+        clarification.status === 'pending' &&
+        clarification.suggested_by === 'agent'
       ) || [];
       
-      console.log('Filtered pending clarifications:', pendingClarifications);
+      console.log('Filtered pending clarifications:', proposalClarifications);
       console.log('Total clarifications found:', data?.length);
-      console.log('Pending clarifications found:', pendingClarifications.length);
+      console.log('Pending clarifications for proposal:', proposalClarifications.length);
       
-      return pendingClarifications;
+      return proposalClarifications;
     },
     enabled: !!activeProposalId
   });
@@ -110,67 +94,49 @@ export function ClarificationsTab() {
       if (!activeProposalId) return [];
 
       const { data, error } = await supabase
-        .from('clarifications')
-        .select(`
-          id,
-          prompt_text,
-          answer_text,
-          answered_at,
-          questions!inner (
-            id,
-            question_text,
-            sections!inner (
-              proposal_id
-            )
-          )
-        `)
-        .eq('status', 'answered')
-        .contains('questions.sections', { proposal_id: activeProposalId })
-        .order('answered_at', { ascending: false })
-        .limit(5);
+        .rpc('get_clarifications_for_user');
       
       if (error) throw error;
       
-      console.log('Answered clarifications:', data);
-      return data || [];
+      // Filter for answered clarifications for this proposal
+      const answeredForProposal = data?.filter(clarification =>
+        clarification.proposal_id === activeProposalId &&
+        clarification.status === 'answered'
+      ).slice(0, 5) || [];
+      
+      console.log('Answered clarifications:', answeredForProposal);
+      return answeredForProposal;
     },
     enabled: !!activeProposalId
   });
 
-  // Check if clarifications exist but aren't showing
+  // Debug query to check all clarifications
   const { data: allClarificationsForProposal } = useQuery({
     queryKey: ['all-clarifications-debug', activeProposalId],
     queryFn: async () => {
       if (!activeProposalId) return [];
 
       const { data, error } = await supabase
-        .from('clarifications')
-        .select(`
-          id,
-          status,
-          suggested_by,
-          questions!inner (
-            sections!inner (
-              proposal_id
-            )
-          )
-        `)
-        .contains('questions.sections', { proposal_id: activeProposalId });
+        .rpc('get_clarifications_for_user');
       
       if (error) {
         console.error('Debug query error:', error);
         return [];
       }
       
-      console.log('ALL clarifications for proposal (debug):', data);
-      return data || [];
+      const proposalClarifications = data?.filter(clarification =>
+        clarification.proposal_id === activeProposalId
+      ) || [];
+      
+      console.log('ALL clarifications for proposal (debug):', proposalClarifications);
+      return proposalClarifications;
     },
     enabled: !!activeProposalId
   });
 
   const submitResponseMutation = useMutation({
     mutationFn: async ({ clarificationId, response }: { clarificationId: string; response: string }) => {
-      const clarification = clarifications?.find(c => c.id === clarificationId);
+      const clarification = clarifications?.find(c => c.clarification_id === clarificationId);
       if (!clarification) throw new Error('Clarification not found');
 
       // Update clarification with answer
@@ -191,7 +157,7 @@ export function ClarificationsTab() {
         .update({
           clarification_answered: true
         })
-        .eq('id', clarification.questions.id);
+        .eq('id', clarification.question_id);
 
       if (questionError) throw questionError;
 
@@ -202,11 +168,11 @@ export function ClarificationsTab() {
           agent_name: 'user_input',
           action: 'clarification_answered',
           proposal_id: activeProposalId!,
-          question_id: clarification.questions.id,
+          question_id: clarification.question_id,
           triggered_by_user_id: profile?.id,
           metadata: {
             clarification_id: clarificationId,
-            question_id: clarification.questions.id,
+            question_id: clarification.question_id,
             user_input: response,
             timestamp: new Date().toISOString()
           }
@@ -218,18 +184,20 @@ export function ClarificationsTab() {
 
       // Check if all clarifications for this proposal are now answered
       const { data: remainingClarifications, error: countError } = await supabase
-        .from('clarifications')
-        .select('id, questions!inner(sections!inner(proposal_id))')
-        .contains('questions.sections', { proposal_id: activeProposalId! })
-        .in('status', ['pending', 'sent']);
+        .rpc('get_clarifications_for_user');
 
       if (countError) {
         console.error('Error checking remaining clarifications:', countError);
         return;
       }
 
-      // If no pending/sent clarifications remain, trigger the orchestrator
-      if (remainingClarifications.length === 1) { // This one will be marked as answered
+      const pendingForProposal = remainingClarifications?.filter(c =>
+        c.proposal_id === activeProposalId! &&
+        c.status === 'pending'
+      ) || [];
+
+      // If no pending clarifications remain, trigger the orchestrator
+      if (pendingForProposal.length === 1) { // This one will be marked as answered
         try {
           const { error: orchestratorError } = await supabase.functions.invoke('orchestrator-agent', {
             body: {
@@ -376,7 +344,7 @@ export function ClarificationsTab() {
         ) : (
           <>
             {pendingClarifications.map((clarification) => (
-              <Card key={clarification.id}>
+              <Card key={clarification.clarification_id}>
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div>
@@ -384,7 +352,7 @@ export function ClarificationsTab() {
                         Clarification Required
                       </CardTitle>
                       <CardDescription>
-                        Section: {clarification.questions.sections.title}
+                        Section: {clarification.section_title}
                       </CardDescription>
                     </div>
                     <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
@@ -396,7 +364,7 @@ export function ClarificationsTab() {
                   <div>
                     <h4 className="font-medium text-gray-900 mb-2">Original Question:</h4>
                     <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">
-                      {clarification.questions.question_text}
+                      {clarification.question_text}
                     </p>
                   </div>
                   
@@ -410,17 +378,17 @@ export function ClarificationsTab() {
                   <div className="space-y-2">
                     <label className="font-medium text-gray-900">Your Response:</label>
                     <Textarea
-                      value={responses[clarification.id] || ''}
+                      value={responses[clarification.clarification_id] || ''}
                       onChange={(e) => setResponses(prev => ({
                         ...prev,
-                        [clarification.id]: e.target.value
+                        [clarification.clarification_id]: e.target.value
                       }))}
                       placeholder="Provide clarification for this question..."
                       rows={3}
                     />
                     <Button 
-                      onClick={() => handleSubmitResponse(clarification.id)}
-                      disabled={!responses[clarification.id]?.trim() || submitResponseMutation.isPending}
+                      onClick={() => handleSubmitResponse(clarification.clarification_id)}
+                      disabled={!responses[clarification.clarification_id]?.trim() || submitResponseMutation.isPending}
                     >
                       <Send className="mr-2 h-4 w-4" />
                       Submit Response
@@ -434,7 +402,7 @@ export function ClarificationsTab() {
               <div className="mt-8">
                 <h3 className="text-lg font-medium mb-4">Recently Completed Clarifications</h3>
                 {completedClarifications.map((clarification) => (
-                  <Card key={clarification.id} className="mb-4">
+                  <Card key={clarification.clarification_id} className="mb-4">
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <CardTitle className="text-base">
@@ -449,7 +417,7 @@ export function ClarificationsTab() {
                       <div className="space-y-3">
                         <div>
                           <span className="font-medium">Question: </span>
-                          <span className="text-gray-700">{clarification.questions.question_text}</span>
+                          <span className="text-gray-700">{clarification.question_text}</span>
                         </div>
                         <div>
                           <span className="font-medium">Clarification: </span>

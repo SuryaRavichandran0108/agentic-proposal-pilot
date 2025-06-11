@@ -439,6 +439,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_clarifications_for_user: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          clarification_id: string
+          prompt_text: string
+          status: Database["public"]["Enums"]["clarification_status"]
+          suggested_by: Database["public"]["Enums"]["clarification_suggested_by"]
+          created_at: string
+          answer_text: string
+          answered_at: string
+          question_id: string
+          question_text: string
+          section_id: string
+          section_title: string
+          proposal_id: string
+          proposal_title: string
+          client_name: string
+          created_by: string
+        }[]
+      }
       get_user_proposal_ids: {
         Args: Record<PropertyKey, never>
         Returns: string[]
