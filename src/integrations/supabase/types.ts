@@ -99,38 +99,96 @@ export type Database = {
           },
         ]
       }
+      clarification_submissions: {
+        Row: {
+          created_at: string | null
+          draft_message: string
+          id: string
+          method: string | null
+          proposal_id: string
+          submitted_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          draft_message: string
+          id?: string
+          method?: string | null
+          proposal_id: string
+          submitted_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          draft_message?: string
+          id?: string
+          method?: string | null
+          proposal_id?: string
+          submitted_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "clarification_submissions_proposal_id_fkey"
+            columns: ["proposal_id"]
+            isOneToOne: false
+            referencedRelation: "proposals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clarification_submissions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clarifications: {
         Row: {
           answer_text: string | null
           answered_at: string | null
+          approved_by_user_id: string | null
           created_at: string
+          edited_prompt_text: string | null
           id: string
           prompt_text: string
           question_id: string
-          status: Database["public"]["Enums"]["clarification_status"]
+          status: Database["public"]["Enums"]["clarification_status"] | null
           suggested_by: Database["public"]["Enums"]["clarification_suggested_by"]
         }
         Insert: {
           answer_text?: string | null
           answered_at?: string | null
+          approved_by_user_id?: string | null
           created_at?: string
+          edited_prompt_text?: string | null
           id?: string
           prompt_text: string
           question_id: string
-          status?: Database["public"]["Enums"]["clarification_status"]
+          status?: Database["public"]["Enums"]["clarification_status"] | null
           suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
         }
         Update: {
           answer_text?: string | null
           answered_at?: string | null
+          approved_by_user_id?: string | null
           created_at?: string
+          edited_prompt_text?: string | null
           id?: string
           prompt_text?: string
           question_id?: string
-          status?: Database["public"]["Enums"]["clarification_status"]
+          status?: Database["public"]["Enums"]["clarification_status"] | null
           suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
         }
         Relationships: [
+          {
+            foreignKeyName: "clarifications_approved_by_user_id_fkey"
+            columns: ["approved_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "clarifications_question_id_fkey"
             columns: ["question_id"]
@@ -449,6 +507,8 @@ export type Database = {
           created_at: string
           answer_text: string
           answered_at: string
+          edited_prompt_text: string
+          approved_by_user_id: string
           question_id: string
           question_text: string
           section_id: string
@@ -466,7 +526,12 @@ export type Database = {
     }
     Enums: {
       answer_generated_by: "AI" | "SME"
-      clarification_status: "pending" | "sent" | "answered"
+      clarification_status:
+        | "suggested"
+        | "approved"
+        | "denied"
+        | "submitted_to_client"
+        | "answered"
       clarification_suggested_by: "agent" | "user"
       file_status: "uploaded" | "parsed" | "failed"
       proposal_status: "draft" | "review" | "submitted"
@@ -595,7 +660,13 @@ export const Constants = {
   public: {
     Enums: {
       answer_generated_by: ["AI", "SME"],
-      clarification_status: ["pending", "sent", "answered"],
+      clarification_status: [
+        "suggested",
+        "approved",
+        "denied",
+        "submitted_to_client",
+        "answered",
+      ],
       clarification_suggested_by: ["agent", "user"],
       file_status: ["uploaded", "parsed", "failed"],
       proposal_status: ["draft", "review", "submitted"],
