@@ -52,12 +52,15 @@ export function ClarificationsTab() {
     }
   }, [proposals, activeProposalId]);
 
-  // Fetch clarifications for the active proposal
+  // Fetch clarifications for the active proposal with improved query
   const { data: clarifications, isLoading, error } = useQuery({
     queryKey: ['clarifications', activeProposalId],
     queryFn: async () => {
       if (!activeProposalId) return [];
 
+      console.log('Fetching clarifications for proposal:', activeProposalId);
+
+      // First, let's get all clarifications with the proper join
       const { data, error } = await supabase
         .from('clarifications')
         .select(`
@@ -66,17 +69,16 @@ export function ClarificationsTab() {
           status,
           created_at,
           suggested_by,
-          questions (
+          questions!inner (
             id,
             question_text,
-            sections (
+            sections!inner (
               id,
               title,
               proposal_id
             )
           )
         `)
-        .eq('status', 'pending')
         .eq('suggested_by', 'agent')
         .eq('questions.sections.proposal_id', activeProposalId)
         .order('created_at', { ascending: false });
@@ -86,13 +88,18 @@ export function ClarificationsTab() {
         throw error;
       }
       
-      // Filter out any clarifications that don't belong to the active proposal
-      const filteredData = data?.filter(clarification => 
-        clarification.questions?.sections?.proposal_id === activeProposalId
+      console.log('Raw clarifications data:', data);
+      
+      // Filter to only show pending clarifications (not answered or rejected)
+      const pendingClarifications = data?.filter(clarification => 
+        clarification.status === 'pending'
       ) || [];
       
-      console.log('Fetched clarifications for proposal:', activeProposalId, filteredData);
-      return filteredData;
+      console.log('Filtered pending clarifications:', pendingClarifications);
+      console.log('Total clarifications found:', data?.length);
+      console.log('Pending clarifications found:', pendingClarifications.length);
+      
+      return pendingClarifications;
     },
     enabled: !!activeProposalId
   });
@@ -110,10 +117,10 @@ export function ClarificationsTab() {
           prompt_text,
           answer_text,
           answered_at,
-          questions (
+          questions!inner (
             id,
             question_text,
-            sections (
+            sections!inner (
               proposal_id
             )
           )
@@ -124,9 +131,40 @@ export function ClarificationsTab() {
         .limit(5);
       
       if (error) throw error;
-      return data?.filter(clarification => 
-        clarification.questions?.sections?.proposal_id === activeProposalId
-      ) || [];
+      
+      console.log('Answered clarifications:', data);
+      return data || [];
+    },
+    enabled: !!activeProposalId
+  });
+
+  // Check if clarifications exist but aren't showing
+  const { data: allClarificationsForProposal } = useQuery({
+    queryKey: ['all-clarifications-debug', activeProposalId],
+    queryFn: async () => {
+      if (!activeProposalId) return [];
+
+      const { data, error } = await supabase
+        .from('clarifications')
+        .select(`
+          id,
+          status,
+          suggested_by,
+          questions!inner (
+            sections!inner (
+              proposal_id
+            )
+          )
+        `)
+        .eq('questions.sections.proposal_id', activeProposalId);
+      
+      if (error) {
+        console.error('Debug query error:', error);
+        return [];
+      }
+      
+      console.log('ALL clarifications for proposal (debug):', data);
+      return data || [];
     },
     enabled: !!activeProposalId
   });
@@ -265,6 +303,10 @@ export function ClarificationsTab() {
 
   const pendingClarifications = clarifications || [];
   const completedClarifications = answeredClarifications || [];
+  const allClarifications = allClarificationsForProposal || [];
+
+  // Check if there are clarifications in the database but none are showing
+  const hasHiddenClarifications = allClarifications.length > 0 && pendingClarifications.length === 0 && completedClarifications.length === 0;
 
   return (
     <div className="space-y-6">
@@ -294,11 +336,32 @@ export function ClarificationsTab() {
           <Badge variant="secondary">
             {pendingClarifications.length} pending
           </Badge>
+          {allClarifications.length > 0 && (
+            <Badge variant="outline">
+              {allClarifications.length} total in DB
+            </Badge>
+          )}
         </div>
       </div>
 
+      {hasHiddenClarifications && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-600" />
+              <span className="text-amber-800 font-medium">
+                ⚠ Clarifications exist in Supabase but could not be loaded — check query logic.
+              </span>
+            </div>
+            <p className="text-amber-700 text-sm mt-1">
+              Found {allClarifications.length} clarifications in database for this proposal, but none are displaying.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6">
-        {pendingClarifications.length === 0 && completedClarifications.length === 0 ? (
+        {pendingClarifications.length === 0 && completedClarifications.length === 0 && !hasHiddenClarifications ? (
           <Card>
             <CardContent className="text-center py-12">
               <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
