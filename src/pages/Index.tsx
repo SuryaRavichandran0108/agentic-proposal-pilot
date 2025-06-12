@@ -1,14 +1,28 @@
-// Update this page (the content is just a fallback if you fail to update the page)
 
-const Index = () => {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+import { useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuthContext } from '@/components/auth/AuthProvider';
+import { ProposalDashboard } from '@/components/dashboard/ProposalDashboard';
+
+export default function Index() {
+  const { user, loading } = useAuthContext();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-2 text-gray-500">Loading application...</p>
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  }
 
-export default Index;
+  // If user is authenticated, show the main dashboard
+  if (user) {
+    return <ProposalDashboard />;
+  }
+
+  // If not authenticated, redirect to auth page or show login
+  return <Navigate to="/auth" replace />;
+}
