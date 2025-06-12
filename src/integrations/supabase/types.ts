@@ -103,8 +103,10 @@ export type Database = {
         Row: {
           created_at: string | null
           draft_message: string
+          expires_at: string | null
           id: string
           method: string | null
+          passcode: string | null
           proposal_id: string
           submitted_at: string | null
           user_id: string
@@ -112,8 +114,10 @@ export type Database = {
         Insert: {
           created_at?: string | null
           draft_message: string
+          expires_at?: string | null
           id?: string
           method?: string | null
+          passcode?: string | null
           proposal_id: string
           submitted_at?: string | null
           user_id: string
@@ -121,8 +125,10 @@ export type Database = {
         Update: {
           created_at?: string | null
           draft_message?: string
+          expires_at?: string | null
           id?: string
           method?: string | null
+          passcode?: string | null
           proposal_id?: string
           submitted_at?: string | null
           user_id?: string
@@ -148,12 +154,15 @@ export type Database = {
         Row: {
           answer_text: string | null
           answered_at: string | null
+          answered_by_email: string | null
           approved_by_user_id: string | null
           created_at: string
           edited_prompt_text: string | null
           id: string
           prompt_text: string
           question_id: string
+          response_metadata: Json | null
+          response_text: string | null
           status: Database["public"]["Enums"]["clarification_status"] | null
           submission_id: string | null
           suggested_by: Database["public"]["Enums"]["clarification_suggested_by"]
@@ -161,12 +170,15 @@ export type Database = {
         Insert: {
           answer_text?: string | null
           answered_at?: string | null
+          answered_by_email?: string | null
           approved_by_user_id?: string | null
           created_at?: string
           edited_prompt_text?: string | null
           id?: string
           prompt_text: string
           question_id: string
+          response_metadata?: Json | null
+          response_text?: string | null
           status?: Database["public"]["Enums"]["clarification_status"] | null
           submission_id?: string | null
           suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
@@ -174,12 +186,15 @@ export type Database = {
         Update: {
           answer_text?: string | null
           answered_at?: string | null
+          answered_by_email?: string | null
           approved_by_user_id?: string | null
           created_at?: string
           edited_prompt_text?: string | null
           id?: string
           prompt_text?: string
           question_id?: string
+          response_metadata?: Json | null
+          response_text?: string | null
           status?: Database["public"]["Enums"]["clarification_status"] | null
           submission_id?: string | null
           suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
@@ -507,6 +522,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_clarifications_by_submission: {
+        Args: { submission_uuid: string }
+        Returns: {
+          clarification_id: string
+          prompt_text: string
+          edited_prompt_text: string
+          response_text: string
+          status: Database["public"]["Enums"]["clarification_status"]
+          proposal_title: string
+          client_name: string
+          created_at: string
+        }[]
+      }
       get_clarifications_for_user: {
         Args: Record<PropertyKey, never>
         Returns: {
@@ -520,6 +548,9 @@ export type Database = {
           edited_prompt_text: string
           approved_by_user_id: string
           submission_id: string
+          response_text: string
+          response_metadata: Json
+          answered_by_email: string
           question_id: string
           question_text: string
           section_id: string
@@ -528,6 +559,17 @@ export type Database = {
           proposal_title: string
           client_name: string
           created_by: string
+        }[]
+      }
+      get_submission_details: {
+        Args: { submission_uuid: string }
+        Returns: {
+          submission_id: string
+          proposal_title: string
+          client_name: string
+          created_at: string
+          passcode: string
+          expires_at: string
         }[]
       }
       get_user_proposal_ids: {

@@ -1,164 +1,205 @@
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+};
 
-interface RequestBody {
-  proposal_id: string;
-  clarification_ids: string[];
-}
-
-Deno.serve(async (req) => {
-  // Handle CORS preflight requests
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { proposal_id, clarification_ids }: RequestBody = await req.json();
+    const { proposal_id, clarification_ids, passcode } = await req.json();
+    
+    console.log(`ClarificationSubmissionAgent triggered for proposal: ${proposal_id}`);
+    console.log(`Processing ${clarification_ids.length} clarifications`);
 
-    console.log('Clarification Submission Agent triggered for proposal:', proposal_id);
-    console.log('Clarification IDs to submit:', clarification_ids);
-
-    // Get proposal details
-    const { data: proposal, error: proposalError } = await supabaseClient
+    // Get proposal details for the submission
+    const { data: proposal, error: proposalError } = await supabase
       .from('proposals')
       .select('title, client_name, created_by')
       .eq('id', proposal_id)
       .single();
 
-    if (proposalError || !proposal) {
-      throw new Error(`Failed to fetch proposal: ${proposalError?.message}`);
+    if (proposalError) {
+      console.error('Error fetching proposal:', proposalError);
+      throw proposalError;
     }
 
-    // Get user details
-    const { data: user, error: userError } = await supabaseClient
+    // Get user details for the draft message
+    const { data: user, error: userError } = await supabase
       .from('users')
-      .select('name')
+      .select('name, email')
       .eq('id', proposal.created_by)
       .single();
 
-    if (userError || !user) {
-      throw new Error(`Failed to fetch user: ${userError?.message}`);
+    if (userError) {
+      console.error('Error fetching user:', userError);
+      throw userError;
     }
 
-    // Verify all clarifications are approved and belong to this proposal
-    const { data: clarifications, error: clarificationsError } = await supabaseClient
-      .rpc('get_clarifications_for_user');
+    // Generate professional draft message with clarification details
+    const { data: clarifications, error: clarificationsError } = await supabase
+      .from('clarifications')
+      .select('prompt_text, edited_prompt_text')
+      .in('id', clarification_ids);
 
     if (clarificationsError) {
-      throw new Error(`Failed to fetch clarifications: ${clarificationsError.message}`);
+      console.error('Error fetching clarifications:', clarificationsError);
+      throw clarificationsError;
     }
 
-    const validClarifications = clarifications?.filter(c => 
-      clarification_ids.includes(c.clarification_id) &&
-      c.proposal_id === proposal_id && 
-      c.status === 'approved'
-    ) || [];
-
-    if (validClarifications.length === 0) {
-      throw new Error('No valid approved clarifications found for submission');
-    }
-
-    if (validClarifications.length !== clarification_ids.length) {
-      console.warn('Some clarifications were not found or not approved');
-    }
-
-    // Generate the draft message
-    const clarificationQuestions = validClarifications
-      .map((c, index) => `${index + 1}. ${c.edited_prompt_text || c.prompt_text}`)
+    const clarificationQuestions = clarifications
+      .map((c, index) => {
+        const questionText = c.edited_prompt_text || c.prompt_text;
+        return `${index + 1}. ${questionText}`;
+      })
       .join('\n\n');
 
-    const draftMessage = `Subject: Clarification Questions for ${proposal.client_name} – ${proposal.title}
+    const currentDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
 
-Dear ${proposal.client_name} Team,
-
-As part of our review of the RFP titled "${proposal.title}", we have a few clarifications we'd like to confirm to ensure a complete and accurate response:
-
-${clarificationQuestions}
-
-Please let us know at your earliest convenience.
-
-Sincerely,
-${user.name}`;
-
-    console.log('Generated draft message for', validClarifications.length, 'clarifications');
-
-    // Create the submission record first
-    const { data: submission, error: submissionError } = await supabaseClient
+    // Create clarification submission record
+    const { data: submission, error: submissionError } = await supabase
       .from('clarification_submissions')
       .insert({
         proposal_id,
         user_id: proposal.created_by,
-        draft_message: draftMessage,
-        method: null
+        draft_message: `Professional clarification request for ${proposal.title}`,
+        method: 'secure_form',
+        passcode: passcode || null,
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days
       })
       .select()
       .single();
 
     if (submissionError) {
-      throw new Error(`Failed to create submission: ${submissionError.message}`);
+      console.error('Error creating submission:', submissionError);
+      throw submissionError;
     }
 
-    console.log('Created submission record:', submission.id);
-
-    // Update all validated clarifications to 'submitted_to_client' status and link to submission
-    const { error: updateError } = await supabaseClient
+    // Update clarifications with submission_id and status
+    const { error: updateError } = await supabase
       .from('clarifications')
       .update({ 
-        status: 'submitted_to_client',
-        submission_id: submission.id
+        submission_id: submission.id,
+        status: 'submitted_to_client'
       })
-      .in('id', validClarifications.map(c => c.clarification_id));
+      .in('id', clarification_ids);
 
     if (updateError) {
-      // If updating clarifications fails, we should clean up the submission record
-      await supabaseClient
-        .from('clarification_submissions')
-        .delete()
-        .eq('id', submission.id);
-      
-      throw new Error(`Failed to update clarification status: ${updateError.message}`);
+      console.error('Error updating clarifications:', updateError);
+      throw updateError;
     }
 
-    console.log('Successfully created submission and updated', validClarifications.length, 'clarification statuses');
+    // Generate the client response URL
+    const clientResponseUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/client-response/${submission.id}`;
 
+    // Create enhanced professional draft message
+    const draftMessage = `Subject: Clarification Request – ${proposal.client_name} / ${proposal.title}
+
+Dear ${proposal.client_name} Team,
+
+We have reviewed the RFP titled "${proposal.title}" and identified several points that require clarification to ensure a complete and accurate response.
+
+We respectfully request your confirmation and additional details on the following items:
+
+${clarificationQuestions}
+
+For your convenience, we have prepared a structured response form that will streamline the clarification process:
+
+🔗 Secure Response Form: ${clientResponseUrl}
+
+${passcode ? `🔒 Access Passcode: ${passcode}` : ''}
+
+This secure form allows you to provide detailed responses to each clarification question. Your responses will be automatically organized and delivered to our proposal team for review.
+
+We appreciate your timely feedback and remain committed to submitting a thorough and compliant response that meets all requirements outlined in your RFP.
+
+Please don't hesitate to contact us if you need any additional information or have questions about this clarification request.
+
+Sincerely,
+
+${user.name || 'Proposal Manager'}
+${proposal.client_name} Response Team
+Email: ${user.email || 'contact@company.com'}
+Date: ${currentDate}
+
+---
+This clarification request was generated on ${currentDate} and contains ${clarifications.length} question${clarifications.length !== 1 ? 's' : ''} for your review.
+Form expires: ${new Date(submission.expires_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`;
+
+    // Update the submission with the final draft message
+    await supabase
+      .from('clarification_submissions')
+      .update({ draft_message: draftMessage })
+      .eq('id', submission.id);
+
+    // Log the submission action
+    const { error: logError } = await supabase
+      .from('agent_logs')
+      .insert({
+        agent_name: 'clarification_submission_agent',
+        action: 'submission_created',
+        proposal_id,
+        triggered_by_user_id: proposal.created_by,
+        metadata: {
+          submission_id: submission.id,
+          clarifications_count: clarification_ids.length,
+          passcode_protected: !!passcode,
+          client_form_url: clientResponseUrl,
+          processing_time_ms: Date.now()
+        }
+      });
+
+    if (logError) {
+      console.error('Error logging submission action:', logError);
+    }
+
+    console.log(`ClarificationSubmissionAgent completed successfully. Submission ID: ${submission.id}`);
+    
     return new Response(
       JSON.stringify({
         success: true,
-        submission_id: submission.id,
-        draft_message: draftMessage,
-        clarifications_count: validClarifications.length
+        message: 'Clarification submission created successfully',
+        data: {
+          submission_id: submission.id,
+          clarifications_count: clarification_ids.length,
+          client_response_url: clientResponseUrl,
+          passcode_protected: !!passcode,
+          expires_at: submission.expires_at,
+          draft_message: draftMessage
+        }
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+        status: 200
       }
     );
 
   } catch (error) {
-    console.error('Clarification Submission Agent error:', error);
+    console.error('ClarificationSubmissionAgent error:', error);
+    
     return new Response(
       JSON.stringify({
-        error: error.message,
-        success: false
+        success: false,
+        error: error.message
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
+        status: 500
       }
     );
   }

@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle, XCircle, Edit, Undo2, Calendar, User } from 'lucide-react';
+import { CheckCircle, XCircle, Edit, Undo2, Calendar, User, MessageSquare } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface ClarificationCardProps {
@@ -17,12 +17,16 @@ interface ClarificationCardProps {
     edited_prompt_text?: string;
     question_text: string;
     section_title: string;
+    response_text?: string;
+    answered_at?: string;
+    answered_by_email?: string;
   };
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
   onEdit: (id: string, text: string) => void;
   onMoveBackToReview?: (id: string) => void;
   isUpdating: boolean;
+  getStatusBadge?: (status: string, hasResponse?: boolean) => JSX.Element;
 }
 
 export function ClarificationCard({ 
@@ -31,7 +35,8 @@ export function ClarificationCard({
   onDeny, 
   onEdit, 
   onMoveBackToReview,
-  isUpdating 
+  isUpdating,
+  getStatusBadge
 }: ClarificationCardProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(
@@ -48,20 +53,10 @@ export function ClarificationCard({
     setIsEditing(false);
   };
 
-  const getStatusBadge = () => {
-    switch (clarification.status) {
-      case 'suggested':
-        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending Review</Badge>;
-      case 'approved':
-        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Approved</Badge>;
-      case 'denied':
-        return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Denied</Badge>;
-      case 'submitted_to_client':
-        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Submitted to Client</Badge>;
-      default:
-        return <Badge variant="secondary">{clarification.status}</Badge>;
-    }
-  };
+  // Use provided status badge function or default
+  const statusBadge = getStatusBadge ? 
+    getStatusBadge(clarification.status, !!clarification.response_text) :
+    <Badge variant="secondary">{clarification.status}</Badge>;
 
   const canEdit = clarification.status === 'suggested' || clarification.status === 'approved';
   const canApprove = clarification.status === 'suggested';
@@ -74,7 +69,7 @@ export function ClarificationCard({
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-2">
-              {getStatusBadge()}
+              {statusBadge}
               <div className="flex items-center text-sm text-gray-500">
                 <Calendar className="h-4 w-4 mr-1" />
                 {format(new Date(clarification.created_at), 'MMM d, yyyy')}
@@ -133,6 +128,33 @@ export function ClarificationCard({
               </div>
             )}
           </div>
+
+          {/* Client Response Section */}
+          {clarification.response_text && (
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block flex items-center gap-1">
+                <MessageSquare className="h-4 w-4" />
+                Client Response:
+              </label>
+              <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                  {clarification.response_text}
+                </p>
+                <div className="flex items-center gap-4 mt-2 text-xs text-blue-600">
+                  {clarification.answered_at && (
+                    <span>
+                      Received: {format(new Date(clarification.answered_at), 'MMM d, yyyy h:mm a')}
+                    </span>
+                  )}
+                  {clarification.answered_by_email && (
+                    <span>
+                      From: {clarification.answered_by_email}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between pt-2">
             <div className="flex gap-2">

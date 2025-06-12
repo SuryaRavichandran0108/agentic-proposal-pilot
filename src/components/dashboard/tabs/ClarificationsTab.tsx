@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -199,13 +198,17 @@ export function ClarificationsTab() {
     }
   });
 
-  // Mutation for confirming submission after modal approval
+  // Enhanced mutation for confirming submission with passcode support
   const confirmSubmissionMutation = useMutation({
-    mutationFn: async (clarificationIds: string[]) => {
+    mutationFn: async ({ clarificationIds, passcode }: { 
+      clarificationIds: string[];
+      passcode?: string;
+    }) => {
       const { data, error } = await supabase.functions.invoke('clarification-submission-agent', {
         body: {
           proposal_id: activeProposalId,
-          clarification_ids: clarificationIds
+          clarification_ids: clarificationIds,
+          passcode
         }
       });
 
@@ -215,7 +218,7 @@ export function ClarificationsTab() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['clarifications'] });
       toast.success(`${data.clarifications_count} clarifications submitted successfully!`);
-      setSubmissionDraft(null); // Close the modal
+      setSubmissionDraft(null);
     },
     onError: (error: any) => {
       console.error('Error confirming submission:', error);
@@ -245,7 +248,7 @@ export function ClarificationsTab() {
     }
   };
 
-  // Generate draft message without updating database
+  // Enhanced draft message generation with professional template
   const handlePrepareSubmission = async () => {
     const approvedClarifications = clarifications?.filter(c => c.status === 'approved') || [];
     
@@ -255,26 +258,47 @@ export function ClarificationsTab() {
     }
 
     try {
-      // Generate draft message without updating database
       const activeProposal = proposals?.find(p => p.id === activeProposalId);
       if (!activeProposal) return;
 
       const clarificationQuestions = approvedClarifications
-        .map((c, index) => `${index + 1}. ${c.edited_prompt_text || c.prompt_text}`)
+        .map((c, index) => {
+          const questionText = c.edited_prompt_text || c.prompt_text;
+          return `${index + 1}. ${questionText}`;
+        })
         .join('\n\n');
 
-      const draftMessage = `Subject: Clarification Questions for ${activeProposal.client_name} – ${activeProposal.title}
+      const currentDate = new Date().toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      const draftMessage = `Subject: Clarification Request – ${activeProposal.client_name} / ${activeProposal.title}
 
 Dear ${activeProposal.client_name} Team,
 
-As part of our review of the RFP titled "${activeProposal.title}", we have a few clarifications we'd like to confirm to ensure a complete and accurate response:
+We have reviewed the RFP titled "${activeProposal.title}" and identified several points that require clarification to ensure a complete and accurate response.
+
+We respectfully request your confirmation and additional details on the following items:
 
 ${clarificationQuestions}
 
-Please let us know at your earliest convenience.
+For your convenience, we have prepared a structured response form that will streamline the clarification process. You will receive a secure link to this form upon confirmation of this request.
+
+We appreciate your timely feedback and remain committed to submitting a thorough and compliant response that meets all requirements outlined in your RFP.
+
+Please don't hesitate to contact us if you need any additional information or have questions about this clarification request.
 
 Sincerely,
-${profile?.name}`;
+
+${profile?.name || 'Proposal Manager'}
+${activeProposal.client_name} Response Team
+Email: ${profile?.email || 'contact@company.com'}
+Date: ${currentDate}
+
+---
+This clarification request was generated on ${currentDate} and contains ${approvedClarifications.length} question${approvedClarifications.length !== 1 ? 's' : ''} for your review.`;
 
       setSubmissionDraft({
         message: draftMessage,
@@ -287,9 +311,31 @@ ${profile?.name}`;
     }
   };
 
-  const handleConfirmSubmission = () => {
+  const handleConfirmSubmission = (options: { passcode?: string } = {}) => {
     if (submissionDraft) {
-      confirmSubmissionMutation.mutate(submissionDraft.clarificationIds);
+      confirmSubmissionMutation.mutate({ 
+        clarificationIds: submissionDraft.clarificationIds,
+        passcode: options.passcode
+      });
+    }
+  };
+
+  // Enhanced status badge function
+  const getStatusBadge = (status: string, hasResponse?: boolean) => {
+    switch (status) {
+      case 'suggested':
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending Review</Badge>;
+      case 'approved':
+        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Approved</Badge>;
+      case 'denied':
+        return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Denied</Badge>;
+      case 'submitted_to_client':
+        if (hasResponse) {
+          return <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">Client Responded</Badge>;
+        }
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Awaiting Client Response</Badge>;
+      default:
+        return <Badge variant="secondary">{status}</Badge>;
     }
   };
 
@@ -444,10 +490,11 @@ ${profile?.name}`;
                   onEdit={handleEdit}
                   onMoveBackToReview={undefined}
                   isUpdating={isUpdating}
+                  getStatusBadge={getStatusBadge}
                 />
               ))}
 
-              {/* Show approved, denied, and submitted clarifications in collapsed sections */}
+              {/* Enhanced sections with response status */}
               {(approvedClarifications.length > 0 || deniedClarifications.length > 0 || submittedClarifications.length > 0) && (
                 <div className="space-y-4">
                   {approvedClarifications.length > 0 && (
@@ -463,6 +510,7 @@ ${profile?.name}`;
                             onEdit={handleEdit}
                             onMoveBackToReview={undefined}
                             isUpdating={isUpdating}
+                            getStatusBadge={getStatusBadge}
                           />
                         ))}
                       </div>
@@ -471,7 +519,14 @@ ${profile?.name}`;
 
                   {submittedClarifications.length > 0 && (
                     <div>
-                      <h3 className="text-lg font-medium mb-3 text-blue-700">Submitted to Client ({submittedClarifications.length})</h3>
+                      <h3 className="text-lg font-medium mb-3 text-blue-700">
+                        Submitted to Client ({submittedClarifications.length})
+                        {submittedClarifications.some(c => c.response_text) && (
+                          <span className="text-purple-600 ml-2">
+                            • {submittedClarifications.filter(c => c.response_text).length} Response{submittedClarifications.filter(c => c.response_text).length !== 1 ? 's' : ''} Received
+                          </span>
+                        )}
+                      </h3>
                       <div className="space-y-4">
                         {submittedClarifications.map((clarification) => (
                           <ClarificationCard
@@ -482,6 +537,7 @@ ${profile?.name}`;
                             onEdit={handleEdit}
                             onMoveBackToReview={handleMoveBackToReview}
                             isUpdating={isUpdating}
+                            getStatusBadge={getStatusBadge}
                           />
                         ))}
                       </div>
@@ -501,6 +557,7 @@ ${profile?.name}`;
                             onEdit={handleEdit}
                             onMoveBackToReview={undefined}
                             isUpdating={isUpdating}
+                            getStatusBadge={getStatusBadge}
                           />
                         ))}
                       </div>
@@ -519,6 +576,10 @@ ${profile?.name}`;
           draftMessage={submissionDraft?.message || ''}
           clarificationsCount={submissionDraft?.count || 0}
           isConfirming={confirmSubmissionMutation.isPending}
+          proposalTitle={activeProposal?.title || ''}
+          clientName={activeProposal?.client_name || ''}
+          managerName={profile?.name}
+          companyName="Your Organization"
         />
       </div>
     </TooltipProvider>
