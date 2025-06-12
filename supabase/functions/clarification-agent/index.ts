@@ -89,7 +89,7 @@ serve(async (req) => {
           question_id: question.id,
           prompt_text: randomPrompt,
           suggested_by: 'agent',
-          status: 'pending'
+          status: 'suggested'
         })
         .select()
         .single();
@@ -108,8 +108,9 @@ serve(async (req) => {
       .from('agent_logs')
       .insert({
         agent_name: 'clarification_agent',
-        action: 'generated_clarification_prompts',
+        action: 'manual_trigger',
         proposal_id,
+        triggered_by_user_id: null, // Will be set by RLS if available
         metadata: {
           questions_flagged: questionsNeedingClarification.length,
           clarifications_created: clarificationsCreated.length,

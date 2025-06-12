@@ -4,10 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuthContext } from '@/components/auth/AuthProvider';
 import { toast } from 'sonner';
-import { MessageSquare, Send, ShieldX, AlertCircle } from 'lucide-react';
+import { MessageSquare, Send, ShieldX, AlertCircle, Play, HelpCircle } from 'lucide-react';
 import { ClarificationCard } from './ClarificationCard';
 import { SubmissionDraftModal } from './SubmissionDraftModal';
 
@@ -87,6 +88,29 @@ export function ClarificationsTab() {
       return proposalClarifications;
     },
     enabled: !!activeProposalId
+  });
+
+  // Mutation for running ClarificationAgent manually
+  const runClarificationAgentMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      console.log('Triggering ClarificationAgent for proposal:', proposalId);
+      
+      const { data, error } = await supabase.functions.invoke('clarification-agent', {
+        body: { proposal_id: proposalId }
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['clarifications'] });
+      toast.success('ClarificationAgent successfully ran. Suggestions have been generated.');
+      console.log('ClarificationAgent completed:', data);
+    },
+    onError: (error: any) => {
+      console.error('Error running ClarificationAgent:', error);
+      toast.error('ClarificationAgent failed to run. Please try again or check the agent logs.');
+    }
   });
 
   // Mutation for updating clarification status
@@ -215,6 +239,12 @@ export function ClarificationsTab() {
     moveBackToReviewMutation.mutate(clarificationId);
   };
 
+  const handleRunClarificationAgent = () => {
+    if (activeProposalId) {
+      runClarificationAgentMutation.mutate(activeProposalId);
+    }
+  };
+
   // Generate draft message without updating database
   const handlePrepareSubmission = async () => {
     const approvedClarifications = clarifications?.filter(c => c.status === 'approved') || [];
@@ -275,6 +305,12 @@ ${profile?.name}`;
                    editClarificationMutation.isPending || 
                    moveBackToReviewMutation.isPending;
 
+  // Determine if ClarificationAgent button should be shown
+  const shouldShowClarificationAgentButton = clarifications && (
+    clarifications.length === 0 || // No clarifications exist
+    clarifications.every(c => ['denied', 'answered', 'submitted_to_client'].includes(c.status)) // All are denied/answered/submitted
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -303,163 +339,188 @@ ${profile?.name}`;
   const allClarifications = clarifications || [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">Clarification Requests</h2>
-          {activeProposal && (
-            <p className="text-gray-600 mt-1">
-              {activeProposal.title} - {activeProposal.client_name}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
-          {proposals && proposals.length > 1 && (
-            <select
-              value={activeProposalId || ''}
-              onChange={(e) => setActiveProposalId(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-2 text-sm"
-            >
-              {proposals.map((proposal) => (
-                <option key={proposal.id} value={proposal.id}>
-                  {proposal.title}
-                </option>
-              ))}
-            </select>
-          )}
-          <Badge variant="secondary">
-            {suggestedClarifications.length} pending review
-          </Badge>
-          {approvedClarifications.length > 0 && (
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-              {approvedClarifications.length} approved
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {hasApprovedClarifications && (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-medium text-green-900">Ready to Submit</h3>
-              <p className="text-sm text-green-700">
-                You have {approvedClarifications.length} approved clarification{approvedClarifications.length !== 1 ? 's' : ''} ready to send to the client.
+    <TooltipProvider>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold">Clarification Requests</h2>
+            {activeProposal && (
+              <p className="text-gray-600 mt-1">
+                {activeProposal.title} - {activeProposal.client_name}
               </p>
-            </div>
-            <Button
-              onClick={handlePrepareSubmission}
-              className="bg-green-600 hover:bg-green-700"
-            >
-              <Send className="mr-2 h-4 w-4" />
-              Submit Clarifications to Client
-            </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            {proposals && proposals.length > 1 && (
+              <select
+                value={activeProposalId || ''}
+                onChange={(e) => setActiveProposalId(e.target.value)}
+                className="border border-gray-300 rounded-md px-3 py-2 text-sm"
+              >
+                {proposals.map((proposal) => (
+                  <option key={proposal.id} value={proposal.id}>
+                    {proposal.title}
+                  </option>
+                ))}
+              </select>
+            )}
+            {shouldShowClarificationAgentButton && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleRunClarificationAgent}
+                      disabled={runClarificationAgentMutation.isPending}
+                      variant="outline"
+                      className="bg-blue-50 hover:bg-blue-100 border-blue-200"
+                    >
+                      <Play className="mr-2 h-4 w-4" />
+                      {runClarificationAgentMutation.isPending ? 'Running...' : 'Run ClarificationAgent'}
+                    </Button>
+                    <HelpCircle className="h-4 w-4 text-gray-400" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Run ClarificationAgent to scan the parsed questions for vague language and generate clarification prompts.</p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            <Badge variant="secondary">
+              {suggestedClarifications.length} pending review
+            </Badge>
+            {approvedClarifications.length > 0 && (
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                {approvedClarifications.length} approved
+              </Badge>
+            )}
           </div>
         </div>
-      )}
 
-      <div className="grid gap-6">
-        {allClarifications.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12">
-              <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
-              <h3 className="mt-4 text-lg font-medium">No clarifications available for this proposal</h3>
-              <p className="text-gray-500">
-                {proposals?.length === 0 
-                  ? 'Upload an RFP to get AI-generated clarification requests'
-                  : 'All clarification requests for this proposal have been addressed'
-                }
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {/* Suggested clarifications for review */}
-            {suggestedClarifications.map((clarification) => (
-              <ClarificationCard
-                key={clarification.clarification_id}
-                clarification={clarification}
-                onApprove={handleApprove}
-                onDeny={handleDeny}
-                onEdit={handleEdit}
-                onMoveBackToReview={undefined}
-                isUpdating={isUpdating}
-              />
-            ))}
-
-            {/* Show approved, denied, and submitted clarifications in collapsed sections */}
-            {(approvedClarifications.length > 0 || deniedClarifications.length > 0 || submittedClarifications.length > 0) && (
-              <div className="space-y-4">
-                {approvedClarifications.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium mb-3 text-green-700">Approved Clarifications ({approvedClarifications.length})</h3>
-                    <div className="space-y-4">
-                      {approvedClarifications.map((clarification) => (
-                        <ClarificationCard
-                          key={clarification.clarification_id}
-                          clarification={clarification}
-                          onApprove={handleApprove}
-                          onDeny={handleDeny}
-                          onEdit={handleEdit}
-                          onMoveBackToReview={undefined}
-                          isUpdating={isUpdating}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {submittedClarifications.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium mb-3 text-blue-700">Submitted to Client ({submittedClarifications.length})</h3>
-                    <div className="space-y-4">
-                      {submittedClarifications.map((clarification) => (
-                        <ClarificationCard
-                          key={clarification.clarification_id}
-                          clarification={clarification}
-                          onApprove={handleApprove}
-                          onDeny={handleDeny}
-                          onEdit={handleEdit}
-                          onMoveBackToReview={handleMoveBackToReview}
-                          isUpdating={isUpdating}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {deniedClarifications.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-medium mb-3 text-red-700">Denied Clarifications ({deniedClarifications.length})</h3>
-                    <div className="space-y-4">
-                      {deniedClarifications.map((clarification) => (
-                        <ClarificationCard
-                          key={clarification.clarification_id}
-                          clarification={clarification}
-                          onApprove={handleApprove}
-                          onDeny={handleDeny}
-                          onEdit={handleEdit}
-                          onMoveBackToReview={undefined}
-                          isUpdating={isUpdating}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+        {hasApprovedClarifications && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-medium text-green-900">Ready to Submit</h3>
+                <p className="text-sm text-green-700">
+                  You have {approvedClarifications.length} approved clarification{approvedClarifications.length !== 1 ? 's' : ''} ready to send to the client.
+                </p>
               </div>
-            )}
-          </>
+              <Button
+                onClick={handlePrepareSubmission}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                <Send className="mr-2 h-4 w-4" />
+                Submit Clarifications to Client
+              </Button>
+            </div>
+          </div>
         )}
-      </div>
 
-      <SubmissionDraftModal
-        isOpen={!!submissionDraft}
-        onClose={() => setSubmissionDraft(null)}
-        onConfirm={handleConfirmSubmission}
-        draftMessage={submissionDraft?.message || ''}
-        clarificationsCount={submissionDraft?.count || 0}
-        isConfirming={confirmSubmissionMutation.isPending}
-      />
-    </div>
+        <div className="grid gap-6">
+          {allClarifications.length === 0 ? (
+            <Card>
+              <CardContent className="text-center py-12">
+                <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-4 text-lg font-medium">No clarifications available for this proposal</h3>
+                <p className="text-gray-500">
+                  {proposals?.length === 0 
+                    ? 'Upload an RFP to get AI-generated clarification requests'
+                    : shouldShowClarificationAgentButton 
+                      ? 'Click "Run ClarificationAgent" to generate clarification prompts from parsed questions'
+                      : 'All clarification requests for this proposal have been addressed'
+                  }
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {/* Suggested clarifications for review */}
+              {suggestedClarifications.map((clarification) => (
+                <ClarificationCard
+                  key={clarification.clarification_id}
+                  clarification={clarification}
+                  onApprove={handleApprove}
+                  onDeny={handleDeny}
+                  onEdit={handleEdit}
+                  onMoveBackToReview={undefined}
+                  isUpdating={isUpdating}
+                />
+              ))}
+
+              {/* Show approved, denied, and submitted clarifications in collapsed sections */}
+              {(approvedClarifications.length > 0 || deniedClarifications.length > 0 || submittedClarifications.length > 0) && (
+                <div className="space-y-4">
+                  {approvedClarifications.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium mb-3 text-green-700">Approved Clarifications ({approvedClarifications.length})</h3>
+                      <div className="space-y-4">
+                        {approvedClarifications.map((clarification) => (
+                          <ClarificationCard
+                            key={clarification.clarification_id}
+                            clarification={clarification}
+                            onApprove={handleApprove}
+                            onDeny={handleDeny}
+                            onEdit={handleEdit}
+                            onMoveBackToReview={undefined}
+                            isUpdating={isUpdating}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {submittedClarifications.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium mb-3 text-blue-700">Submitted to Client ({submittedClarifications.length})</h3>
+                      <div className="space-y-4">
+                        {submittedClarifications.map((clarification) => (
+                          <ClarificationCard
+                            key={clarification.clarification_id}
+                            clarification={clarification}
+                            onApprove={handleApprove}
+                            onDeny={handleDeny}
+                            onEdit={handleEdit}
+                            onMoveBackToReview={handleMoveBackToReview}
+                            isUpdating={isUpdating}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {deniedClarifications.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium mb-3 text-red-700">Denied Clarifications ({deniedClarifications.length})</h3>
+                      <div className="space-y-4">
+                        {deniedClarifications.map((clarification) => (
+                          <ClarificationCard
+                            key={clarification.clarification_id}
+                            clarification={clarification}
+                            onApprove={handleApprove}
+                            onDeny={handleDeny}
+                            onEdit={handleEdit}
+                            onMoveBackToReview={undefined}
+                            isUpdating={isUpdating}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <SubmissionDraftModal
+          isOpen={!!submissionDraft}
+          onClose={() => setSubmissionDraft(null)}
+          onConfirm={handleConfirmSubmission}
+          draftMessage={submissionDraft?.message || ''}
+          clarificationsCount={submissionDraft?.count || 0}
+          isConfirming={confirmSubmissionMutation.isPending}
+        />
+      </div>
+    </TooltipProvider>
   );
 }
