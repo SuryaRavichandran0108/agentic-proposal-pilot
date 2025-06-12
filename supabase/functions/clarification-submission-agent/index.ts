@@ -21,7 +21,7 @@ serve(async (req) => {
     const { proposal_id, clarification_ids, passcode } = await req.json();
     
     console.log(`ClarificationSubmissionAgent triggered for proposal: ${proposal_id}`);
-    console.log(`Processing ${clarification_ids.length} clarifications`);
+    console.log(`Processing ${clarification_ids.length} clarifications: ${clarification_ids.join(', ')}`);
 
     // Get proposal details for the submission
     const { data: proposal, error: proposalError } = await supabase
@@ -47,15 +47,26 @@ serve(async (req) => {
       throw userError;
     }
 
-    // Generate professional draft message with clarification details
+    // Verify clarifications exist and are approved
     const { data: clarifications, error: clarificationsError } = await supabase
       .from('clarifications')
-      .select('prompt_text, edited_prompt_text')
+      .select('id, prompt_text, edited_prompt_text, status')
       .in('id', clarification_ids);
 
     if (clarificationsError) {
       console.error('Error fetching clarifications:', clarificationsError);
       throw clarificationsError;
+    }
+
+    if (!clarifications || clarifications.length === 0) {
+      throw new Error('No clarifications found for the provided IDs');
+    }
+
+    // Verify all clarifications are approved
+    const nonApprovedClarifications = clarifications.filter(c => c.status !== 'approved');
+    if (nonApprovedClarifications.length > 0) {
+      console.error('Non-approved clarifications found:', nonApprovedClarifications.map(c => c.id));
+      throw new Error(`Some clarifications are not approved: ${nonApprovedClarifications.map(c => c.id).join(', ')}`);
     }
 
     const clarificationQuestions = clarifications
@@ -71,7 +82,7 @@ serve(async (req) => {
       day: 'numeric'
     });
 
-    // Create clarification submission record
+    // Create clarification submission record first
     const { data: submission, error: submissionError } = await supabase
       .from('clarification_submissions')
       .insert({
@@ -90,19 +101,24 @@ serve(async (req) => {
       throw submissionError;
     }
 
-    // Update clarifications with submission_id and status
-    const { error: updateError } = await supabase
+    console.log(`Created submission with ID: ${submission.id}`);
+
+    // Update clarifications with submission_id and status - THIS IS THE CRITICAL FIX
+    const { data: updatedClarifications, error: updateError } = await supabase
       .from('clarifications')
       .update({ 
         submission_id: submission.id,
         status: 'submitted_to_client'
       })
-      .in('id', clarification_ids);
+      .in('id', clarification_ids)
+      .select();
 
     if (updateError) {
       console.error('Error updating clarifications:', updateError);
       throw updateError;
     }
+
+    console.log(`Successfully updated ${updatedClarifications?.length || 0} clarifications with submission_id: ${submission.id}`);
 
     // Generate the client response URL
     const clientResponseUrl = `${supabaseUrl.replace('.supabase.co', '.lovable.app')}/client-response/${submission.id}`;
@@ -158,8 +174,10 @@ Form expires: ${new Date(submission.expires_at).toLocaleDateString('en-US', { ye
         metadata: {
           submission_id: submission.id,
           clarifications_count: clarification_ids.length,
+          clarification_ids: clarification_ids,
           passcode_protected: !!passcode,
           client_form_url: clientResponseUrl,
+          updated_clarifications: updatedClarifications?.length || 0,
           processing_time_ms: Date.now()
         }
       });
@@ -168,7 +186,7 @@ Form expires: ${new Date(submission.expires_at).toLocaleDateString('en-US', { ye
       console.error('Error logging submission action:', logError);
     }
 
-    console.log(`ClarificationSubmissionAgent completed successfully. Submission ID: ${submission.id}`);
+    console.log(`ClarificationSubmissionAgent completed successfully. Submission ID: ${submission.id}, Updated clarifications: ${updatedClarifications?.length || 0}`);
     
     return new Response(
       JSON.stringify({
@@ -177,6 +195,7 @@ Form expires: ${new Date(submission.expires_at).toLocaleDateString('en-US', { ye
         data: {
           submission_id: submission.id,
           clarifications_count: clarification_ids.length,
+          updated_clarifications_count: updatedClarifications?.length || 0,
           client_response_url: clientResponseUrl,
           passcode_protected: !!passcode,
           expires_at: submission.expires_at,
