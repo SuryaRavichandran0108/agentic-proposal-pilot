@@ -155,6 +155,7 @@ export type Database = {
           prompt_text: string
           question_id: string
           status: Database["public"]["Enums"]["clarification_status"] | null
+          submission_id: string | null
           suggested_by: Database["public"]["Enums"]["clarification_suggested_by"]
         }
         Insert: {
@@ -167,6 +168,7 @@ export type Database = {
           prompt_text: string
           question_id: string
           status?: Database["public"]["Enums"]["clarification_status"] | null
+          submission_id?: string | null
           suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
         }
         Update: {
@@ -179,6 +181,7 @@ export type Database = {
           prompt_text?: string
           question_id?: string
           status?: Database["public"]["Enums"]["clarification_status"] | null
+          submission_id?: string | null
           suggested_by?: Database["public"]["Enums"]["clarification_suggested_by"]
         }
         Relationships: [
@@ -194,6 +197,13 @@ export type Database = {
             columns: ["question_id"]
             isOneToOne: false
             referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clarifications_submission_id_fkey"
+            columns: ["submission_id"]
+            isOneToOne: false
+            referencedRelation: "clarification_submissions"
             referencedColumns: ["id"]
           },
         ]
@@ -509,6 +519,7 @@ export type Database = {
           answered_at: string
           edited_prompt_text: string
           approved_by_user_id: string
+          submission_id: string
           question_id: string
           question_text: string
           section_id: string

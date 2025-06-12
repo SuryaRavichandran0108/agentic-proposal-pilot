@@ -16,6 +16,7 @@ export function ClarificationsTab() {
   const [submissionDraft, setSubmissionDraft] = useState<{
     message: string;
     count: number;
+    clarificationIds: string[];
   } | null>(null);
   const { profile, isProposalManager } = useAuthContext();
   const queryClient = useQueryClient();
@@ -151,12 +152,36 @@ export function ClarificationsTab() {
     }
   });
 
-  // Mutation for submitting clarifications to client
-  const submitClarificationsMutation = useMutation({
-    mutationFn: async () => {
+  // Mutation for moving clarification back to review
+  const moveBackToReviewMutation = useMutation({
+    mutationFn: async (clarificationId: string) => {
+      const { error } = await supabase
+        .from('clarifications')
+        .update({ 
+          status: 'approved',
+          submission_id: null
+        })
+        .eq('id', clarificationId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clarifications'] });
+      toast.success('Clarification moved back to review!');
+    },
+    onError: (error: any) => {
+      console.error('Error moving clarification back to review:', error);
+      toast.error('Failed to move clarification back to review: ' + error.message);
+    }
+  });
+
+  // Mutation for confirming submission after modal approval
+  const confirmSubmissionMutation = useMutation({
+    mutationFn: async (clarificationIds: string[]) => {
       const { data, error } = await supabase.functions.invoke('clarification-submission-agent', {
         body: {
-          proposal_id: activeProposalId
+          proposal_id: activeProposalId,
+          clarification_ids: clarificationIds
         }
       });
 
@@ -165,15 +190,12 @@ export function ClarificationsTab() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['clarifications'] });
-      setSubmissionDraft({
-        message: data.draft_message,
-        count: data.clarifications_count
-      });
       toast.success(`${data.clarifications_count} clarifications submitted successfully!`);
+      setSubmissionDraft(null); // Close the modal
     },
     onError: (error: any) => {
-      console.error('Error submitting clarifications:', error);
-      toast.error('Failed to submit clarifications: ' + error.message);
+      console.error('Error confirming submission:', error);
+      toast.error('Failed to confirm submission: ' + error.message);
     }
   });
 
@@ -189,8 +211,56 @@ export function ClarificationsTab() {
     editClarificationMutation.mutate({ clarificationId, editedText });
   };
 
-  const handleSubmitToClient = () => {
-    submitClarificationsMutation.mutate();
+  const handleMoveBackToReview = (clarificationId: string) => {
+    moveBackToReviewMutation.mutate(clarificationId);
+  };
+
+  // Generate draft message without updating database
+  const handlePrepareSubmission = async () => {
+    const approvedClarifications = clarifications?.filter(c => c.status === 'approved') || [];
+    
+    if (approvedClarifications.length === 0) {
+      toast.error('No approved clarifications to submit');
+      return;
+    }
+
+    try {
+      // Generate draft message without updating database
+      const activeProposal = proposals?.find(p => p.id === activeProposalId);
+      if (!activeProposal) return;
+
+      const clarificationQuestions = approvedClarifications
+        .map((c, index) => `${index + 1}. ${c.edited_prompt_text || c.prompt_text}`)
+        .join('\n\n');
+
+      const draftMessage = `Subject: Clarification Questions for ${activeProposal.client_name} – ${activeProposal.title}
+
+Dear ${activeProposal.client_name} Team,
+
+As part of our review of the RFP titled "${activeProposal.title}", we have a few clarifications we'd like to confirm to ensure a complete and accurate response:
+
+${clarificationQuestions}
+
+Please let us know at your earliest convenience.
+
+Sincerely,
+${profile?.name}`;
+
+      setSubmissionDraft({
+        message: draftMessage,
+        count: approvedClarifications.length,
+        clarificationIds: approvedClarifications.map(c => c.clarification_id)
+      });
+    } catch (error: any) {
+      console.error('Error preparing submission:', error);
+      toast.error('Failed to prepare submission: ' + error.message);
+    }
+  };
+
+  const handleConfirmSubmission = () => {
+    if (submissionDraft) {
+      confirmSubmissionMutation.mutate(submissionDraft.clarificationIds);
+    }
   };
 
   const activeProposal = proposals?.find(p => p.id === activeProposalId);
@@ -201,7 +271,9 @@ export function ClarificationsTab() {
   const submittedClarifications = clarifications?.filter(c => c.status === 'submitted_to_client') || [];
 
   const hasApprovedClarifications = approvedClarifications.length > 0;
-  const isUpdating = updateClarificationMutation.isPending || editClarificationMutation.isPending;
+  const isUpdating = updateClarificationMutation.isPending || 
+                   editClarificationMutation.isPending || 
+                   moveBackToReviewMutation.isPending;
 
   if (isLoading) {
     return (
@@ -276,8 +348,7 @@ export function ClarificationsTab() {
               </p>
             </div>
             <Button
-              onClick={handleSubmitToClient}
-              disabled={submitClarificationsMutation.isPending}
+              onClick={handlePrepareSubmission}
               className="bg-green-600 hover:bg-green-700"
             >
               <Send className="mr-2 h-4 w-4" />
@@ -311,6 +382,7 @@ export function ClarificationsTab() {
                 onApprove={handleApprove}
                 onDeny={handleDeny}
                 onEdit={handleEdit}
+                onMoveBackToReview={undefined}
                 isUpdating={isUpdating}
               />
             ))}
@@ -329,6 +401,7 @@ export function ClarificationsTab() {
                           onApprove={handleApprove}
                           onDeny={handleDeny}
                           onEdit={handleEdit}
+                          onMoveBackToReview={undefined}
                           isUpdating={isUpdating}
                         />
                       ))}
@@ -347,6 +420,7 @@ export function ClarificationsTab() {
                           onApprove={handleApprove}
                           onDeny={handleDeny}
                           onEdit={handleEdit}
+                          onMoveBackToReview={handleMoveBackToReview}
                           isUpdating={isUpdating}
                         />
                       ))}
@@ -365,6 +439,7 @@ export function ClarificationsTab() {
                           onApprove={handleApprove}
                           onDeny={handleDeny}
                           onEdit={handleEdit}
+                          onMoveBackToReview={undefined}
                           isUpdating={isUpdating}
                         />
                       ))}
@@ -380,8 +455,10 @@ export function ClarificationsTab() {
       <SubmissionDraftModal
         isOpen={!!submissionDraft}
         onClose={() => setSubmissionDraft(null)}
+        onConfirm={handleConfirmSubmission}
         draftMessage={submissionDraft?.message || ''}
         clarificationsCount={submissionDraft?.count || 0}
+        isConfirming={confirmSubmissionMutation.isPending}
       />
     </div>
   );

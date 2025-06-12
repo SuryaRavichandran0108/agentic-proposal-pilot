@@ -1,23 +1,27 @@
 
 import React, { useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Check, X, Edit, Save, RotateCcw } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { CheckCircle, XCircle, Edit, Undo2, Calendar, User } from 'lucide-react';
+import { format } from 'date-fns';
 
 interface ClarificationCardProps {
   clarification: {
     clarification_id: string;
     prompt_text: string;
-    edited_prompt_text?: string;
     status: string;
-    section_title: string;
+    suggested_by: string;
+    created_at: string;
+    edited_prompt_text?: string;
     question_text: string;
+    section_title: string;
   };
   onApprove: (id: string) => void;
   onDeny: (id: string) => void;
-  onEdit: (id: string, editedText: string) => void;
+  onEdit: (id: string, text: string) => void;
+  onMoveBackToReview?: (id: string) => void;
   isUpdating: boolean;
 }
 
@@ -26,133 +30,159 @@ export function ClarificationCard({
   onApprove, 
   onDeny, 
   onEdit, 
+  onMoveBackToReview,
   isUpdating 
 }: ClarificationCardProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [editedText, setEditedText] = useState(
+  const [editText, setEditText] = useState(
     clarification.edited_prompt_text || clarification.prompt_text
   );
 
   const handleSaveEdit = () => {
-    onEdit(clarification.clarification_id, editedText);
+    onEdit(clarification.clarification_id, editText);
     setIsEditing(false);
   };
 
   const handleCancelEdit = () => {
-    setEditedText(clarification.edited_prompt_text || clarification.prompt_text);
+    setEditText(clarification.edited_prompt_text || clarification.prompt_text);
     setIsEditing(false);
   };
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      suggested: { variant: 'outline' as const, label: 'Awaiting Review', className: 'bg-yellow-50 text-yellow-700 border-yellow-200' },
-      approved: { variant: 'outline' as const, label: 'Approved', className: 'bg-green-50 text-green-700 border-green-200' },
-      denied: { variant: 'outline' as const, label: 'Denied', className: 'bg-red-50 text-red-700 border-red-200' },
-      submitted_to_client: { variant: 'outline' as const, label: 'Submitted', className: 'bg-blue-50 text-blue-700 border-blue-200' },
-    };
-
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.suggested;
-    return (
-      <Badge variant={config.variant} className={config.className}>
-        {config.label}
-      </Badge>
-    );
+  const getStatusBadge = () => {
+    switch (clarification.status) {
+      case 'suggested':
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Pending Review</Badge>;
+      case 'approved':
+        return <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Approved</Badge>;
+      case 'denied':
+        return <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Denied</Badge>;
+      case 'submitted_to_client':
+        return <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Submitted to Client</Badge>;
+      default:
+        return <Badge variant="secondary">{clarification.status}</Badge>;
+    }
   };
 
-  const canReview = clarification.status === 'suggested';
+  const canEdit = clarification.status === 'suggested' || clarification.status === 'approved';
+  const canApprove = clarification.status === 'suggested';
+  const canDeny = clarification.status === 'suggested';
+  const canMoveBack = clarification.status === 'submitted_to_client' && onMoveBackToReview;
 
   return (
-    <Card key={clarification.clarification_id}>
-      <CardHeader>
-        <div className="flex items-start justify-between">
-          <div>
-            <CardTitle className="text-lg">
-              Clarification Required
-            </CardTitle>
-            <CardDescription>
-              Section: {clarification.section_title}
-            </CardDescription>
-          </div>
-          {getStatusBadge(clarification.status)}
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div>
-          <h4 className="font-medium text-gray-900 mb-2">Original Question:</h4>
-          <p className="text-gray-700 bg-gray-50 p-3 rounded-lg">
-            {clarification.question_text}
-          </p>
-        </div>
-        
-        <div>
-          <h4 className="font-medium text-gray-900 mb-2">Clarification Request:</h4>
-          {isEditing ? (
-            <div className="space-y-2">
-              <Textarea
-                value={editedText}
-                onChange={(e) => setEditedText(e.target.value)}
-                rows={3}
-                className="w-full"
-              />
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleSaveEdit}
-                  disabled={isUpdating || !editedText.trim()}
-                  size="sm"
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  Save
-                </Button>
-                <Button
-                  onClick={handleCancelEdit}
-                  variant="outline"
-                  size="sm"
-                >
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Cancel
-                </Button>
+    <Card className="mb-4">
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              {getStatusBadge()}
+              <div className="flex items-center text-sm text-gray-500">
+                <Calendar className="h-4 w-4 mr-1" />
+                {format(new Date(clarification.created_at), 'MMM d, yyyy')}
               </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <p className="text-gray-700 bg-blue-50 p-3 rounded-lg">
-                {clarification.edited_prompt_text || clarification.prompt_text}
-              </p>
-              {canReview && (
+            <h4 className="font-medium text-gray-900 mb-1">
+              {clarification.section_title}
+            </h4>
+            <p className="text-sm text-gray-600 mb-3">
+              Question: {clarification.question_text}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-sm font-medium text-gray-700 mb-1 block">
+              Clarification Request:
+            </label>
+            {isEditing ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  rows={3}
+                  className="w-full"
+                />
                 <div className="flex gap-2">
                   <Button
-                    onClick={() => onApprove(clarification.clarification_id)}
-                    disabled={isUpdating}
-                    variant="outline"
+                    onClick={handleSaveEdit}
                     size="sm"
-                    className="border-green-200 text-green-700 hover:bg-green-50"
+                    disabled={isUpdating}
                   >
-                    <Check className="mr-2 h-4 w-4" />
-                    Approve
+                    Save
                   </Button>
                   <Button
-                    onClick={() => onDeny(clarification.clarification_id)}
-                    disabled={isUpdating}
+                    onClick={handleCancelEdit}
                     variant="outline"
                     size="sm"
-                    className="border-red-200 text-red-700 hover:bg-red-50"
-                  >
-                    <X className="mr-2 h-4 w-4" />
-                    Deny
-                  </Button>
-                  <Button
-                    onClick={() => setIsEditing(true)}
                     disabled={isUpdating}
-                    variant="outline"
-                    size="sm"
                   >
-                    <Edit className="mr-2 h-4 w-4" />
-                    Edit
+                    Cancel
                   </Button>
                 </div>
+              </div>
+            ) : (
+              <div className="bg-gray-50 p-3 rounded border">
+                <p className="text-sm text-gray-800 whitespace-pre-wrap">
+                  {clarification.edited_prompt_text || clarification.prompt_text}
+                </p>
+                {clarification.edited_prompt_text && (
+                  <p className="text-xs text-gray-500 mt-1 italic">
+                    (Edited from original)
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex gap-2">
+              {canApprove && (
+                <Button
+                  onClick={() => onApprove(clarification.clarification_id)}
+                  size="sm"
+                  disabled={isUpdating}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  <CheckCircle className="mr-1 h-4 w-4" />
+                  Approve
+                </Button>
+              )}
+              {canDeny && (
+                <Button
+                  onClick={() => onDeny(clarification.clarification_id)}
+                  size="sm"
+                  variant="destructive"
+                  disabled={isUpdating}
+                >
+                  <XCircle className="mr-1 h-4 w-4" />
+                  Deny
+                </Button>
+              )}
+              {canMoveBack && (
+                <Button
+                  onClick={() => onMoveBackToReview!(clarification.clarification_id)}
+                  size="sm"
+                  variant="outline"
+                  disabled={isUpdating}
+                  className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                >
+                  <Undo2 className="mr-1 h-4 w-4" />
+                  Move Back to Review
+                </Button>
               )}
             </div>
-          )}
+            {canEdit && !isEditing && (
+              <Button
+                onClick={() => setIsEditing(true)}
+                size="sm"
+                variant="outline"
+                disabled={isUpdating}
+              >
+                <Edit className="mr-1 h-4 w-4" />
+                Edit
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -8,6 +8,7 @@ const corsHeaders = {
 
 interface RequestBody {
   proposal_id: string;
+  clarification_ids: string[];
 }
 
 Deno.serve(async (req) => {
@@ -27,9 +28,10 @@ Deno.serve(async (req) => {
       }
     );
 
-    const { proposal_id }: RequestBody = await req.json();
+    const { proposal_id, clarification_ids }: RequestBody = await req.json();
 
     console.log('Clarification Submission Agent triggered for proposal:', proposal_id);
+    console.log('Clarification IDs to submit:', clarification_ids);
 
     // Get proposal details
     const { data: proposal, error: proposalError } = await supabaseClient
@@ -53,7 +55,7 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch user: ${userError?.message}`);
     }
 
-    // Get approved clarifications for this proposal
+    // Verify all clarifications are approved and belong to this proposal
     const { data: clarifications, error: clarificationsError } = await supabaseClient
       .rpc('get_clarifications_for_user');
 
@@ -61,16 +63,22 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to fetch clarifications: ${clarificationsError.message}`);
     }
 
-    const approvedClarifications = clarifications?.filter(c => 
-      c.proposal_id === proposal_id && c.status === 'approved'
+    const validClarifications = clarifications?.filter(c => 
+      clarification_ids.includes(c.clarification_id) &&
+      c.proposal_id === proposal_id && 
+      c.status === 'approved'
     ) || [];
 
-    if (approvedClarifications.length === 0) {
-      throw new Error('No approved clarifications found for submission');
+    if (validClarifications.length === 0) {
+      throw new Error('No valid approved clarifications found for submission');
+    }
+
+    if (validClarifications.length !== clarification_ids.length) {
+      console.warn('Some clarifications were not found or not approved');
     }
 
     // Generate the draft message
-    const clarificationQuestions = approvedClarifications
+    const clarificationQuestions = validClarifications
       .map((c, index) => `${index + 1}. ${c.edited_prompt_text || c.prompt_text}`)
       .join('\n\n');
 
@@ -87,9 +95,9 @@ Please let us know at your earliest convenience.
 Sincerely,
 ${user.name}`;
 
-    console.log('Generated draft message for', approvedClarifications.length, 'clarifications');
+    console.log('Generated draft message for', validClarifications.length, 'clarifications');
 
-    // Store the submission draft
+    // Create the submission record first
     const { data: submission, error: submissionError } = await supabaseClient
       .from('clarification_submissions')
       .insert({
@@ -105,24 +113,35 @@ ${user.name}`;
       throw new Error(`Failed to create submission: ${submissionError.message}`);
     }
 
-    // Update all approved clarifications to 'submitted_to_client' status
+    console.log('Created submission record:', submission.id);
+
+    // Update all validated clarifications to 'submitted_to_client' status and link to submission
     const { error: updateError } = await supabaseClient
       .from('clarifications')
-      .update({ status: 'submitted_to_client' })
-      .in('id', approvedClarifications.map(c => c.clarification_id));
+      .update({ 
+        status: 'submitted_to_client',
+        submission_id: submission.id
+      })
+      .in('id', validClarifications.map(c => c.clarification_id));
 
     if (updateError) {
+      // If updating clarifications fails, we should clean up the submission record
+      await supabaseClient
+        .from('clarification_submissions')
+        .delete()
+        .eq('id', submission.id);
+      
       throw new Error(`Failed to update clarification status: ${updateError.message}`);
     }
 
-    console.log('Successfully created submission and updated clarification statuses');
+    console.log('Successfully created submission and updated', validClarifications.length, 'clarification statuses');
 
     return new Response(
       JSON.stringify({
         success: true,
         submission_id: submission.id,
         draft_message: draftMessage,
-        clarifications_count: approvedClarifications.length
+        clarifications_count: validClarifications.length
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

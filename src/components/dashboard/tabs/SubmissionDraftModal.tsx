@@ -2,21 +2,25 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Copy, CheckCircle } from 'lucide-react';
+import { Copy, CheckCircle, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface SubmissionDraftModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onConfirm: () => void;
   draftMessage: string;
   clarificationsCount: number;
+  isConfirming: boolean;
 }
 
 export function SubmissionDraftModal({ 
   isOpen, 
   onClose, 
+  onConfirm,
   draftMessage, 
-  clarificationsCount 
+  clarificationsCount,
+  isConfirming
 }: SubmissionDraftModalProps) {
   const copyToClipboard = async () => {
     try {
@@ -32,11 +36,11 @@ export function SubmissionDraftModal({
       <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-green-600" />
-            Clarifications Submitted Successfully
+            <Send className="h-5 w-5 text-blue-600" />
+            Review Clarifications for Submission
           </DialogTitle>
           <DialogDescription>
-            {clarificationsCount} clarification{clarificationsCount !== 1 ? 's' : ''} prepared for client submission
+            Review the draft message for {clarificationsCount} clarification{clarificationsCount !== 1 ? 's' : ''} before confirming submission
           </DialogDescription>
         </DialogHeader>
         
@@ -58,20 +62,49 @@ export function SubmissionDraftModal({
             </pre>
           </div>
           
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h4 className="font-medium text-blue-900 mb-2">Next Steps:</h4>
-            <ul className="text-sm text-blue-800 space-y-1">
-              <li>• Copy the draft message above</li>
-              <li>• Send via your preferred communication method (email, client portal, etc.)</li>
-              <li>• The clarifications are now marked as "Submitted to Client"</li>
-              <li>• You can track responses in the Clarifications tab</li>
-            </ul>
+          <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+            <h4 className="font-medium text-amber-900 mb-2">⚠️ Important Note:</h4>
+            <p className="text-sm text-amber-800">
+              Clicking "Confirm Submission" will mark these clarifications as "Submitted to Client" and they will be moved out of your approved list. 
+              You can use "Move Back to Review" later if needed.
+            </p>
           </div>
           
-          <div className="flex justify-end">
-            <Button onClick={onClose}>
-              Close
+          <div className="flex justify-between">
+            <Button 
+              onClick={onClose} 
+              variant="outline"
+              disabled={isConfirming}
+            >
+              Cancel
             </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={copyToClipboard}
+                variant="secondary"
+                disabled={isConfirming}
+              >
+                <Copy className="mr-2 h-4 w-4" />
+                Copy & Close
+              </Button>
+              <Button 
+                onClick={onConfirm}
+                disabled={isConfirming}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isConfirming ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Confirming...
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    Confirm Submission
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
