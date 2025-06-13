@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -99,7 +98,7 @@ export default function ClientResponse() {
       setResponses(initialResponses);
 
       // Check if all responses are already submitted
-      const allSubmitted = data?.every((c: Clarification) => c.response_text);
+      const allSubmitted = data?.every((c: Clarification) => c.response_text && c.status === 'answered');
       if (allSubmitted && data?.length > 0) {
         setIsSubmitted(true);
       }
@@ -146,28 +145,31 @@ export default function ClientResponse() {
     try {
       setIsSubmitting(true);
 
-      // Update each clarification with response
-      for (const clarification of clarifications) {
-        const responseText = responses[clarification.clarification_id];
-        
-        const { error } = await supabase
-          .from('clarifications')
-          .update({
-            response_text: responseText,
-            status: 'answered',
-            answered_at: new Date().toISOString(),
-            answered_by_email: contactEmail || undefined
-          })
-          .eq('id', clarification.clarification_id);
+      // Submit responses through the edge function
+      const { data, error } = await supabase.functions.invoke('client-response-handler', {
+        body: {
+          submission_id: submissionId,
+          responses: responses,
+          contact_email: contactEmail || null
+        }
+      });
 
-        if (error) throw error;
+      if (error) {
+        console.error('Submission error:', error);
+        throw new Error(error.message || 'Failed to submit responses');
       }
 
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to submit responses');
+      }
+
+      console.log('Submission successful:', data);
       setIsSubmitted(true);
       toast.success('Your responses have been submitted successfully!');
+
     } catch (err: any) {
       console.error('Error submitting responses:', err);
-      toast.error('Failed to submit responses. Please try again.');
+      toast.error(err.message || 'Failed to submit responses. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
