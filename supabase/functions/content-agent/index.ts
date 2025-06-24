@@ -19,9 +19,27 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { proposal_id } = await req.json();
+    const { proposal_id, agent_log_id } = await req.json();
     
     console.log(`ContentAgent starting answer generation for proposal: ${proposal_id}`);
+
+    // If triggered by agent_log_id, mark the log as processed
+    if (agent_log_id) {
+      const { error: logUpdateError } = await supabase
+        .from('agent_logs')
+        .update({ 
+          metadata: { 
+            ...((await supabase.from('agent_logs').select('metadata').eq('id', agent_log_id).single()).data?.metadata || {}),
+            status: 'processing',
+            processed_at: new Date().toISOString()
+          }
+        })
+        .eq('id', agent_log_id);
+
+      if (logUpdateError) {
+        console.error('Error updating agent log:', logUpdateError);
+      }
+    }
 
     // Verify proposal is still in draft status
     const { data: proposal, error: proposalError } = await supabase
@@ -55,7 +73,7 @@ serve(async (req) => {
       .select(`
         *,
         sections!inner(proposal_id),
-        clarifications(answer_text),
+        clarifications(answer_text, response_text, status),
         answers(id)
       `)
       .eq('sections.proposal_id', proposal_id)
@@ -74,10 +92,13 @@ serve(async (req) => {
     // Generate answers for each question
     for (const question of questions) {
       try {
-        // Get clarification context if available
-        const clarificationContext = question.clarifications
-          .map(c => c.answer_text)
-          .filter(Boolean)
+        // Get clarification context if available - prioritize answered clarifications
+        const answeredClarifications = question.clarifications.filter(c => 
+          c.status === 'answered' && c.response_text
+        );
+        
+        const clarificationContext = answeredClarifications
+          .map(c => c.response_text)
           .join(' ');
 
         // Generate mock AI answer with simulated retrieval context
@@ -102,7 +123,10 @@ serve(async (req) => {
         
         // Track context sources used
         if (clarificationContext) {
-          sourceContext.push('clarification_used');
+          sourceContext.push('clarification_response_used');
+        }
+        if (question.clarifications.some(c => c.answer_text)) {
+          sourceContext.push('clarification_context_used');
         }
         sourceContext.push('prior_answer_match');
 
@@ -110,6 +134,25 @@ serve(async (req) => {
 
       } catch (error) {
         console.error(`Error processing question ${question.id}:`, error);
+      }
+    }
+
+    // Mark the agent log as completed if it was triggered by the database
+    if (agent_log_id) {
+      const { error: logCompleteError } = await supabase
+        .from('agent_logs')
+        .update({ 
+          metadata: { 
+            ...((await supabase.from('agent_logs').select('metadata').eq('id', agent_log_id).single()).data?.metadata || {}),
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            answers_generated: answersGenerated
+          }
+        })
+        .eq('id', agent_log_id);
+
+      if (logCompleteError) {
+        console.error('Error completing agent log:', logCompleteError);
       }
     }
 
@@ -123,7 +166,8 @@ serve(async (req) => {
         metadata: {
           num_drafted: answersGenerated,
           source_context: [...new Set(sourceContext)],
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          triggered_by_agent_log: agent_log_id || null
         }
       });
 
@@ -211,12 +255,13 @@ function generateMockAnswer(questionText: string, clarificationContext: string):
   // Add retrieval context
   answer += `${retrievalContext}\n\n`;
 
-  // Add clarification context if available
+  // Add clarification context if available - this is the key enhancement
   if (clarificationContext) {
-    answer += `Taking into account the clarification provided: "${clarificationContext.substring(0, 200)}${clarificationContext.length > 200 ? '...' : ''}"\n\n`;
+    answer += `Taking into account the client's clarification responses: "${clarificationContext.substring(0, 300)}${clarificationContext.length > 300 ? '...' : ''}"\n\n`;
+    answer += `Based on this specific client input, our tailored solution includes:\n\n`;
   }
 
-  // Generate mock answer based on question type
+  // Generate mock answer based on question type with clarification-informed responses
   if (questionText.toLowerCase().includes('security') || questionText.toLowerCase().includes('compliance')) {
     answer += "Our security approach includes:\n";
     answer += "• Implementation of enterprise-grade security protocols\n";
@@ -224,6 +269,10 @@ function generateMockAnswer(questionText: string, clarificationContext: string):
     answer += "• Compliance with industry standards (SOC 2, ISO 27001)\n";
     answer += "• Data encryption both in transit and at rest\n";
     answer += "• Multi-factor authentication and role-based access controls";
+    
+    if (clarificationContext) {
+      answer += "\n• Custom security measures addressing your specific requirements";
+    }
   } else if (questionText.toLowerCase().includes('technical') || questionText.toLowerCase().includes('architecture')) {
     answer += "Our technical solution includes:\n";
     answer += "• Scalable cloud-native architecture\n";
@@ -231,6 +280,10 @@ function generateMockAnswer(questionText: string, clarificationContext: string):
     answer += "• API-first approach for seamless integrations\n";
     answer += "• Automated testing and CI/CD pipelines\n";
     answer += "• Performance monitoring and alerting systems";
+    
+    if (clarificationContext) {
+      answer += "\n• Architecture optimized based on your specific technical requirements";
+    }
   } else if (questionText.toLowerCase().includes('timeline') || questionText.toLowerCase().includes('schedule')) {
     answer += "Our proposed timeline includes:\n";
     answer += "• Phase 1: Discovery and planning (2-3 weeks)\n";
@@ -238,6 +291,10 @@ function generateMockAnswer(questionText: string, clarificationContext: string):
     answer += "• Phase 3: Testing and quality assurance (2-3 weeks)\n";
     answer += "• Phase 4: Deployment and go-live (1-2 weeks)\n";
     answer += "• Ongoing support and maintenance";
+    
+    if (clarificationContext) {
+      answer += "\n• Timeline adjusted to accommodate your specific constraints and priorities";
+    }
   } else {
     answer += "Our comprehensive approach addresses all requirements through:\n";
     answer += "• Detailed analysis of your specific needs\n";
@@ -245,9 +302,17 @@ function generateMockAnswer(questionText: string, clarificationContext: string):
     answer += "• Collaborative approach with your team\n";
     answer += "• Regular progress updates and milestone reviews\n";
     answer += "• Post-implementation support and optimization";
+    
+    if (clarificationContext) {
+      answer += "\n• Customized solution elements based on your clarification responses";
+    }
   }
 
-  answer += "\n\nThis solution leverages our proven methodologies and ensures successful project delivery while meeting all specified requirements.";
+  if (clarificationContext) {
+    answer += "\n\nThis solution directly incorporates the additional information you provided during the clarification process, ensuring our proposal precisely addresses your specific requirements and constraints.";
+  } else {
+    answer += "\n\nThis solution leverages our proven methodologies and ensures successful project delivery while meeting all specified requirements.";
+  }
 
   return answer;
 }
