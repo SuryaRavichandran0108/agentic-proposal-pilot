@@ -13,6 +13,7 @@ interface ContentAgentRerunButtonProps {
 
 export function ContentAgentRerunButton({ proposalId, disabled = false }: ContentAgentRerunButtonProps) {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [lastTriggerTime, setLastTriggerTime] = useState<number | null>(null);
 
   // Check if there's already a pending ContentAgent log
   const { data: pendingLogs, refetch: refetchPendingLogs } = useQuery({
@@ -20,7 +21,7 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
     queryFn: async () => {
       const { data, error } = await supabase
         .from('agent_logs')
-        .select('id, created_at')
+        .select('id, created_at, metadata')
         .eq('proposal_id', proposalId)
         .eq('agent_name', 'ContentAgent')
         .eq('metadata->>status', 'pending')
@@ -33,13 +34,21 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
       }
 
       return data || [];
-    }
+    },
+    refetchInterval: 5000 // Check every 5 seconds for status updates
   });
 
   const hasPendingLog = pendingLogs && pendingLogs.length > 0;
 
+  // Cooldown check (1 minute)
+  const isInCooldown = lastTriggerTime && (Date.now() - lastTriggerTime) < 60000;
+
   const handleRerunContentAgent = async () => {
-    if (isProcessing || disabled || hasPendingLog) {
+    if (isProcessing || disabled || hasPendingLog || isInCooldown) {
+      if (isInCooldown) {
+        const remainingSeconds = Math.ceil((60000 - (Date.now() - lastTriggerTime!)) / 1000);
+        toast.error(`Please wait ${remainingSeconds} seconds before triggering again`);
+      }
       return;
     }
 
@@ -47,8 +56,8 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
       setIsProcessing(true);
       console.log(`Triggering ContentAgent re-run for proposal: ${proposalId}`);
       
-      toast.info('Reprocessing ContentAgent...', {
-        description: 'Starting content generation process'
+      toast.info('Starting ContentAgent...', {
+        description: 'Processing clarifications and generating answers'
       });
 
       // Call the content-agent edge function
@@ -62,7 +71,7 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
       if (error) {
         console.error('Content agent trigger failed:', error);
         toast.error('Failed to trigger ContentAgent', {
-          description: error.message || 'Unknown error occurred'
+          description: error.message || 'Network or system error occurred'
         });
         return;
       }
@@ -76,9 +85,12 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
       }
 
       console.log('ContentAgent triggered successfully:', data);
-      toast.success('ContentAgent reprocessing started', {
-        description: `Processing answers for ${data.data?.answers_generated || 0} questions`
+      toast.success('ContentAgent started successfully', {
+        description: `Processing answers for proposal`
       });
+
+      // Set cooldown timer
+      setLastTriggerTime(Date.now());
 
       // Refresh the pending logs query to update button state
       await refetchPendingLogs();
@@ -93,7 +105,27 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
     }
   };
 
-  const isButtonDisabled = disabled || isProcessing || hasPendingLog;
+  const isButtonDisabled = disabled || isProcessing || hasPendingLog || isInCooldown;
+
+  const getButtonText = () => {
+    if (isProcessing) return 'Processing...';
+    if (hasPendingLog) return 'Already in Progress';
+    if (isInCooldown) {
+      const remainingSeconds = Math.ceil((60000 - (Date.now() - lastTriggerTime!)) / 1000);
+      return `Wait ${remainingSeconds}s`;
+    }
+    return 'Re-run ContentAgent';
+  };
+
+  const getButtonIcon = () => {
+    if (isProcessing) {
+      return <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />;
+    }
+    if (hasPendingLog) {
+      return <Clock className="h-4 w-4" />;
+    }
+    return <RefreshCw className="h-4 w-4" />;
+  };
 
   return (
     <Button
@@ -103,22 +135,8 @@ export function ContentAgentRerunButton({ proposalId, disabled = false }: Conten
       size="sm"
       className="gap-2"
     >
-      {isProcessing ? (
-        <>
-          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
-          Processing...
-        </>
-      ) : hasPendingLog ? (
-        <>
-          <Clock className="h-4 w-4" />
-          Already in Progress
-        </>
-      ) : (
-        <>
-          <RefreshCw className="h-4 w-4" />
-          Re-run ContentAgent
-        </>
-      )}
+      {getButtonIcon()}
+      {getButtonText()}
     </Button>
   );
 }

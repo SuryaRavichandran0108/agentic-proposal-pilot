@@ -111,18 +111,35 @@ serve(async (req) => {
     try {
       console.log(`Triggering content-agent for proposal: ${submission.proposal_id}`);
       
-      const { error: contentAgentError } = await supabase.functions.invoke('content-agent', {
-        body: {
-          proposal_id: submission.proposal_id,
-          submission_id: submission_id
-        }
-      });
+      // Check if there's already a pending ContentAgent log to avoid duplicates
+      const { data: existingLogs, error: logCheckError } = await supabase
+        .from('agent_logs')
+        .select('id')
+        .eq('proposal_id', submission.proposal_id)
+        .eq('agent_name', 'ContentAgent')
+        .eq('metadata->>status', 'pending')
+        .limit(1);
 
-      if (contentAgentError) {
-        console.error('Failed to trigger content-agent:', contentAgentError);
-        // Don't throw error - we don't want to fail the client response submission
+      if (logCheckError) {
+        console.error('Error checking existing logs:', logCheckError);
+      } else if (existingLogs && existingLogs.length > 0) {
+        console.log('ContentAgent already pending for this proposal, skipping duplicate trigger');
       } else {
-        console.log('Successfully triggered content-agent');
+        // No pending ContentAgent log, safe to trigger
+        const { data: contentAgentData, error: contentAgentError } = await supabase.functions.invoke('content-agent', {
+          body: {
+            proposal_id: submission.proposal_id,
+            submission_id: submission_id,
+            trigger_source: 'client_response'
+          }
+        });
+
+        if (contentAgentError) {
+          console.error('Failed to trigger content-agent:', contentAgentError);
+          // Don't throw error - we don't want to fail the client response submission
+        } else {
+          console.log('Successfully triggered content-agent:', contentAgentData);
+        }
       }
     } catch (triggerError) {
       // Log error but don't fail the client response submission

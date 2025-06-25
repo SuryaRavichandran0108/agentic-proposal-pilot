@@ -19,9 +19,9 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { proposal_id, agent_log_id } = await req.json();
+    const { proposal_id, agent_log_id, trigger_source } = await req.json();
     
-    console.log(`ContentAgent starting processing for proposal: ${proposal_id}`);
+    console.log(`ContentAgent starting processing for proposal: ${proposal_id}, trigger: ${trigger_source || 'unknown'}`);
 
     // If triggered by agent_log_id, mark the log as processed
     if (agent_log_id) {
@@ -31,7 +31,8 @@ serve(async (req) => {
           metadata: { 
             ...((await supabase.from('agent_logs').select('metadata').eq('id', agent_log_id).single()).data?.metadata || {}),
             status: 'processing',
-            processed_at: new Date().toISOString()
+            processed_at: new Date().toISOString(),
+            trigger_source: trigger_source || 'unknown'
           }
         })
         .eq('id', agent_log_id);
@@ -42,14 +43,29 @@ serve(async (req) => {
     }
 
     // Call the database function to process all pending ContentAgent logs
-    const { error: processingError } = await supabase.rpc('process_pending_content_agent_logs');
+    const { data: processResult, error: processingError } = await supabase.rpc('process_pending_content_agent_logs');
 
     if (processingError) {
       console.error('Error processing pending logs:', processingError);
+      
+      // Update any pending logs to failed status
+      if (agent_log_id) {
+        await supabase
+          .from('agent_logs')
+          .update({ 
+            metadata: { 
+              status: 'failed',
+              error_message: processingError.message,
+              failed_at: new Date().toISOString()
+            }
+          })
+          .eq('id', agent_log_id);
+      }
+      
       throw new Error('Failed to process pending content agent logs');
     }
 
-    console.log('Successfully processed all pending ContentAgent logs');
+    console.log('Successfully processed all pending ContentAgent logs:', processResult);
 
     // Check if all questions now have answers and optionally update proposal status
     const { data: remainingQuestions, error: checkError } = await supabase
@@ -62,7 +78,7 @@ serve(async (req) => {
       .eq('sections.proposal_id', proposal_id)
       .is('answers.id', null);
 
-    if (!checkError && remainingQuestions.length === 0) {
+    if (!checkError && remainingQuestions && remainingQuestions.length === 0) {
       // All questions have answers, optionally update proposal to review status
       const { error: updateError } = await supabase
         .from('proposals')
@@ -97,7 +113,8 @@ serve(async (req) => {
         message: 'Content generation completed',
         data: {
           proposal_id,
-          answers_generated: answersGenerated
+          answers_generated: answersGenerated,
+          trigger_source: trigger_source || 'unknown'
         }
       }),
       {
