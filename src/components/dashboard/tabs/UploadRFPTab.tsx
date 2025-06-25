@@ -72,25 +72,20 @@ export function UploadRFPTab() {
         metadata: { file_name: file.name, file_size: file.size }
       });
 
-      // Trigger ParserAgent via direct fetch to edge function
+      // Trigger ParserAgent via Supabase functions.invoke
       try {
-        const response = await fetch('/functions/v1/parser-agent', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        const { data: parserResult, error: parserError } = await supabase.functions.invoke('parser-agent', {
+          body: {
             proposal_id: proposal.id,
             file_id: fileRecord.id
-          })
+          }
         });
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (parserError) {
+          throw new Error(`ParserAgent failed: ${parserError.message}`);
         }
 
-        const result = await response.json();
-        console.log('ParserAgent triggered successfully:', result);
+        console.log('ParserAgent triggered successfully:', parserResult);
         toast.success('RFP uploaded successfully! ParserAgent is processing...');
       } catch (parserError: any) {
         console.error('Failed to trigger ParserAgent:', parserError);
