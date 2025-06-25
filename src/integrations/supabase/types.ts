@@ -576,6 +576,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string[]
       }
+      process_pending_content_agent_logs: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       answer_generated_by: "AI" | "SME"
