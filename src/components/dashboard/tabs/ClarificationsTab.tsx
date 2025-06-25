@@ -123,9 +123,14 @@ export function ClarificationsTab() {
         .eq('questions.sections.proposal_id', selectedProposalId)
         .in('status', ['suggested', 'approved', 'denied', 'submitted_to_client', 'answered']);
 
-      // Apply status filter if specified
-      if (filterStatus) {
-        query = query.eq('status', filterStatus);
+      // Apply status filter if specified - fix the type issue here
+      if (filterStatus && filterStatus !== 'all') {
+        const validStatuses = ['suggested', 'approved', 'denied', 'submitted_to_client', 'answered'] as const;
+        type ValidStatus = typeof validStatuses[number];
+        
+        if (validStatuses.includes(filterStatus as ValidStatus)) {
+          query = query.eq('status', filterStatus as ValidStatus);
+        }
       }
 
       const { data, error } = await query.order('created_at', { ascending: false });
