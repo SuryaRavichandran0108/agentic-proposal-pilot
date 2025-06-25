@@ -25,6 +25,7 @@ interface ClarificationCardProps {
   onDeny: (id: string) => void;
   onEdit: (id: string, text: string) => void;
   onMoveBackToReview?: (id: string) => void;
+  onViewSubmission: () => void;
   isUpdating: boolean;
   getStatusBadge?: (status: string, hasResponse?: boolean) => JSX.Element;
 }
@@ -35,6 +36,7 @@ export function ClarificationCard({
   onDeny, 
   onEdit, 
   onMoveBackToReview,
+  onViewSubmission,
   isUpdating,
   getStatusBadge
 }: ClarificationCardProps) {

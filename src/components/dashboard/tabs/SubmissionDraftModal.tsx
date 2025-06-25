@@ -11,12 +11,13 @@ import { toast } from 'sonner';
 interface SubmissionDraftModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (options: { passcode?: string }) => void;
-  draftMessage: string;
-  clarificationsCount: number;
-  isConfirming: boolean;
-  proposalTitle: string;
-  clientName: string;
+  onConfirm?: (options: { passcode?: string }) => void;
+  submissionId: string;
+  draftMessage?: string;
+  clarificationsCount?: number;
+  isConfirming?: boolean;
+  proposalTitle?: string;
+  clientName?: string;
   managerName?: string;
   companyName?: string;
 }
@@ -25,11 +26,12 @@ export function SubmissionDraftModal({
   isOpen, 
   onClose, 
   onConfirm,
-  draftMessage, 
-  clarificationsCount,
-  isConfirming,
-  proposalTitle,
-  clientName,
+  submissionId,
+  draftMessage = '', 
+  clarificationsCount = 0,
+  isConfirming = false,
+  proposalTitle = '',
+  clientName = '',
   managerName = "Your Name",
   companyName = "Your Organization"
 }: SubmissionDraftModalProps) {
@@ -46,8 +48,10 @@ export function SubmissionDraftModal({
   };
 
   const handleConfirm = () => {
-    const options = usePasscode && passcode ? { passcode } : {};
-    onConfirm(options);
+    if (onConfirm) {
+      const options = usePasscode && passcode ? { passcode } : {};
+      onConfirm(options);
+    }
   };
 
   const generatePasscode = () => {
@@ -149,23 +153,25 @@ export function SubmissionDraftModal({
                 <Copy className="mr-2 h-4 w-4" />
                 Copy & Close
               </Button>
-              <Button 
-                onClick={handleConfirm}
-                disabled={isConfirming}
-                className="bg-green-600 hover:bg-green-700"
-              >
-                {isConfirming ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Send Clarifications to Client
-                  </>
-                )}
-              </Button>
+              {onConfirm && (
+                <Button 
+                  onClick={handleConfirm}
+                  disabled={isConfirming}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {isConfirming ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Send Clarifications to Client
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </div>

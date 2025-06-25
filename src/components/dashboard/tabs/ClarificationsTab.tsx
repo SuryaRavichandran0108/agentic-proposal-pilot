@@ -76,13 +76,19 @@ export function ClarificationsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('proposals')
-        .select('id as proposal_id, title as proposal_title, client_name');
+        .select('id, title, client_name');
 
       if (error) {
         console.error('Error fetching proposals:', error);
         throw error;
       }
-      return data as Proposal[];
+
+      // Map the data to match our interface
+      return (data || []).map(item => ({
+        proposal_id: item.id,
+        proposal_title: item.title,
+        client_name: item.client_name
+      })) as Proposal[];
     },
   });
 
@@ -113,7 +119,6 @@ export function ClarificationsTab() {
         .from('clarifications')
         .select(`
           id,
-          id as clarification_id,
           submission_id,
           prompt_text,
           edited_prompt_text,
@@ -143,9 +148,9 @@ export function ClarificationsTab() {
       }
 
       // Transform the data to match our interface
-      const transformedData = data?.map(item => ({
+      const transformedData = (data || []).map(item => ({
         id: item.id,
-        clarification_id: item.clarification_id,
+        clarification_id: item.id,
         submission_id: item.submission_id,
         prompt_text: item.prompt_text,
         edited_prompt_text: item.edited_prompt_text,
@@ -157,9 +162,9 @@ export function ClarificationsTab() {
         answered_by_email: item.answered_by_email,
         question_text: (item.questions as any)?.question_text || '',
         section_title: (item.questions as any)?.sections?.title || ''
-      })) || [];
+      })) as Clarification[];
 
-      return transformedData as Clarification[];
+      return transformedData;
     },
     enabled: !!selectedProposalId,
   });
@@ -179,6 +184,23 @@ export function ClarificationsTab() {
   const handleCloseSubmissionModal = () => {
     setIsSubmissionModalOpen(false);
     setSelectedSubmissionId(null);
+  };
+
+  // Placeholder functions for clarification actions
+  const handleApprove = (id: string) => {
+    console.log('Approve clarification:', id);
+  };
+
+  const handleDeny = (id: string) => {
+    console.log('Deny clarification:', id);
+  };
+
+  const handleEdit = (id: string, text: string) => {
+    console.log('Edit clarification:', id, text);
+  };
+
+  const handleMoveBackToReview = (id: string) => {
+    console.log('Move back to review:', id);
   };
 
   return (
@@ -280,7 +302,12 @@ export function ClarificationsTab() {
                     <ClarificationCard
                       key={clarification.id}
                       clarification={clarification}
+                      onApprove={handleApprove}
+                      onDeny={handleDeny}
+                      onEdit={handleEdit}
+                      onMoveBackToReview={handleMoveBackToReview}
                       onViewSubmission={() => handleOpenSubmissionModal(clarification.submission_id)}
+                      isUpdating={false}
                     />
                   ))}
                 </div>
