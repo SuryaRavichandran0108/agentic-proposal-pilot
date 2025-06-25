@@ -63,58 +63,56 @@ export function ProposalBuilderTab() {
   const [selectedProposal, setSelectedProposal] = useState<ProposalPreview | null>(null);
 
   const { data: proposals, isLoading } = useQuery({
-    queryKey: ['proposals-for-submission'],
-    queryFn: async () => {
-  const { data, error } = await supabase
-    .from('proposals')
-    .select(`
-      id,
-      title,
-      client_name,
-      status,
-      due_date,
-      created_at,
-      sections (
+  queryKey: ['proposals-for-submission'],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from('proposals')
+      .select(`
         id,
         title,
-        order_index,
-        questions (
+        client_name,
+        status,
+        due_date,
+        created_at,
+        sections (
           id,
-          question_text,
-          requires_review,
-          reviewed,
-          confidence_score,
-          answers (*),
-          clarifications (*)
+          title,
+          order_index,
+          questions (
+            id,
+            question_text,
+            requires_review,
+            reviewed,
+            confidence_score,
+            answers (*),
+            clarifications (*)
+          )
         )
-      )
-    `)
-    .in('status', ['review', 'submitted'])
-    .order('created_at', { ascending: false });
+      `)
+      .in('status', ['review', 'submitted'])
+      .order('created_at', { ascending: false });
 
-  if (error) throw error;
+    if (error) throw error;
 
-  const normalized = data?.map((p) => ({
-    ...p,
-    sections: Array.isArray(p.sections)
-      ? p.sections.map((s) => ({
-          ...s,
-          questions: Array.isArray(s.questions)
-            ? s.questions.map((q) => ({
-                ...q,
-                answers: Array.isArray(q.answers) ? q.answers : q.answers ? [q.answers] : [],
-                clarifications: Array.isArray(q.clarifications) ? q.clarifications : q.clarifications ? [q.clarifications] : [],
-              }))
-            : [],
-        }))
-      : [],
-  }));
+    const normalized = data?.map((p) => ({
+      ...p,
+      sections: Array.isArray(p.sections)
+        ? p.sections.map((s) => ({
+            ...s,
+            questions: Array.isArray(s.questions)
+              ? s.questions.map((q) => ({
+                  ...q,
+                  answers: Array.isArray(q.answers) ? q.answers : q.answers ? [q.answers] : [],
+                  clarifications: Array.isArray(q.clarifications) ? q.clarifications : q.clarifications ? [q.clarifications] : [],
+                }))
+              : [],
+          }))
+        : [],
+    }));
 
-  return normalized as ProposalPreview[];
-};
-
-
-  });
+    return normalized as ProposalPreview[];
+  },
+});
 
   const submitProposalMutation = useMutation({
     mutationFn: async ({ proposalId, submittedTo, format }: { proposalId: string; submittedTo: string; format: 'PDF' | 'DOCX' | 'ZIP' }) => {
