@@ -13,6 +13,36 @@ import { useAuthContext } from '@/components/auth/AuthProvider';
 import { toast } from 'sonner';
 import { Download, Send, CheckCircle, AlertTriangle, FileText, Clock } from 'lucide-react';
 
+interface Answer {
+  id: string;
+  answer_text: string;
+  generated_by: string;
+  version_number: number;
+}
+
+interface Clarification {
+  id: string;
+  answer_text: string | null;
+  status: string;
+}
+
+interface Question {
+  id: string;
+  question_text: string;
+  requires_review: boolean;
+  reviewed: boolean;
+  confidence_score: number | null;
+  answers: Answer[];
+  clarifications: Clarification[];
+}
+
+interface Section {
+  id: string;
+  title: string;
+  order_index: number;
+  questions: Question[];
+}
+
 interface ProposalPreview {
   id: string;
   title: string;
@@ -20,29 +50,7 @@ interface ProposalPreview {
   status: string;
   due_date: string | null;
   created_at: string;
-  sections: Array<{
-    id: string;
-    title: string;
-    order_index: number;
-    questions: Array<{
-      id: string;
-      question_text: string;
-      requires_review: boolean;
-      reviewed: boolean;
-      confidence_score: number | null;
-      answers: Array<{
-        id: string;
-        answer_text: string;
-        generated_by: string;
-        version_number: number;
-      }>;
-      clarifications: Array<{
-        id: string;
-        answer_text: string | null;
-        status: string;
-      }>;
-    }>;
-  }>;
+  sections: Section[];
 }
 
 export function ProposalBuilderTab() {
@@ -59,14 +67,24 @@ export function ProposalBuilderTab() {
       const { data, error } = await supabase
         .from('proposals')
         .select(`
-          *,
+          id,
+          title,
+          client_name,
+          status,
+          due_date,
+          created_at,
           sections (
-            *,
+            id,
+            title,
+            order_index,
             questions (
-              *,
+              id,
+              question_text,
+              requires_review,
+              reviewed,
+              confidence_score,
               answers (*),
-              clarifications (*),
-              review_assignments (*)
+              clarifications (*)
             )
           )
         `)
@@ -124,8 +142,8 @@ export function ProposalBuilderTab() {
           title: section.title,
           questions: section.questions.map(q => ({
             question: q.question_text,
-            answer: q.answers[0]?.answer_text || 'No answer provided',
-            clarification: q.clarifications[0]?.answer_text || null
+            answer: q.answers && q.answers.length > 0 ? q.answers[0].answer_text : 'No answer provided',
+            clarification: q.clarifications && q.clarifications.length > 0 ? q.clarifications[0].answer_text : null
           }))
         }))
       };
@@ -148,7 +166,7 @@ export function ProposalBuilderTab() {
 
   const getProposalCompletionStatus = (proposal: ProposalPreview) => {
     const allQuestions = proposal.sections?.flatMap(s => s.questions) || [];
-    const questionsWithAnswers = allQuestions.filter(q => q.answers?.length > 0);
+    const questionsWithAnswers = allQuestions.filter(q => Array.isArray(q.answers) && q.answers.length > 0);
     const questionsNeedingReview = allQuestions.filter(q => q.requires_review);
     const reviewedQuestions = questionsNeedingReview.filter(q => q.reviewed);
     
@@ -280,7 +298,9 @@ export function ProposalBuilderTab() {
                               {question.question_text}
                             </div>
                             <div className="text-sm text-gray-600 mb-2">
-                              {question.answers[0]?.answer_text || 'No answer provided'}
+                              {Array.isArray(question.answers) && question.answers.length > 0 
+                                ? question.answers[0].answer_text 
+                                : 'No answer provided'}
                             </div>
                             <div className="flex items-center gap-2">
                               {question.confidence_score && (
@@ -288,7 +308,7 @@ export function ProposalBuilderTab() {
                                   Confidence: {Math.round(question.confidence_score * 100)}%
                                 </Badge>
                               )}
-                              {question.answers[0]?.generated_by === 'SME' && (
+                              {Array.isArray(question.answers) && question.answers.length > 0 && question.answers[0].generated_by === 'SME' && (
                                 <Badge variant="outline" className="text-xs bg-blue-50">
                                   SME Edited
                                 </Badge>
@@ -299,7 +319,7 @@ export function ProposalBuilderTab() {
                                 </Badge>
                               )}
                             </div>
-                            {question.clarifications[0]?.answer_text && (
+                            {Array.isArray(question.clarifications) && question.clarifications.length > 0 && question.clarifications[0].answer_text && (
                               <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
                                 <strong>Clarification:</strong> {question.clarifications[0].answer_text}
                               </div>

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -189,7 +190,7 @@ export function DraftViewerTab() {
         ) || 0;
         
         const answeredQuestions = proposal.sections?.reduce((total, section) => 
-          total + (section.questions?.filter(q => q.answers && q.answers.length > 0).length || 0), 0
+          total + (section.questions?.filter(q => Array.isArray(q.answers) && q.answers.length > 0).length || 0), 0
         ) || 0;
 
         return (
@@ -222,8 +223,8 @@ export function DraftViewerTab() {
                     <h3 className="font-medium text-lg mb-4">{section.title}</h3>
                     <div className="space-y-4">
                       {section.questions?.map((question) => {
-                        const hasAnswer = question.answers && question.answers.length > 0;
-                        const answer = question.answers?.[0];
+                        const hasAnswer = Array.isArray(question.answers) && question.answers.length > 0;
+                        const answer = hasAnswer ? question.answers[0] : null;
                         const clarification = question.clarifications?.find(c => c.status === 'answered');
                         const isEditing = answer && editingAnswers[answer.id] !== undefined;
 
