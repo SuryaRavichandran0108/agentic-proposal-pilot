@@ -98,28 +98,11 @@ export function ClarificationsTab() {
     queryFn: async () => {
       if (!selectedProposalId) return [];
 
-      // Get submission IDs for the proposal first
-      const { data: submissionIds, error: submissionError } = await supabase
-        .from('clarification_submissions')
-        .select('id')
-        .eq('proposal_id', selectedProposalId);
-
-      if (submissionError) {
-        console.error('Error fetching submissions:', submissionError);
-        throw submissionError;
-      }
-
-      if (!submissionIds || submissionIds.length === 0) {
-        return [];
-      }
-
-      const submissionIdsList = submissionIds.map(sub => sub.id);
-
+      // Build the query to fetch clarifications with proper joins
       let query = supabase
         .from('clarifications')
         .select(`
           id,
-          submission_id,
           prompt_text,
           edited_prompt_text,
           response_text,
@@ -127,20 +110,25 @@ export function ClarificationsTab() {
           created_at,
           answered_at,
           answered_by_email,
+          question_id,
           questions!inner(
             question_text,
+            section_id,
             sections!inner(
-              title
+              title,
+              proposal_id
             )
           )
         `)
-        .in('submission_id', submissionIdsList);
+        .eq('questions.sections.proposal_id', selectedProposalId)
+        .in('status', ['suggested', 'approved', 'denied', 'submitted_to_client', 'answered']);
 
+      // Apply status filter if specified
       if (filterStatus) {
-        query = query.eq('status', filterStatus as 'suggested' | 'approved' | 'denied' | 'submitted_to_client' | 'answered');
+        query = query.eq('status', filterStatus);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await query.order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching clarifications:', error);
@@ -148,21 +136,26 @@ export function ClarificationsTab() {
       }
 
       // Transform the data to match our interface
-      const transformedData = (data || []).map(item => ({
-        id: item.id,
-        clarification_id: item.id,
-        submission_id: item.submission_id,
-        prompt_text: item.prompt_text,
-        edited_prompt_text: item.edited_prompt_text,
-        response_text: item.response_text,
-        status: item.status,
-        suggested_by: 'agent', // Default value
-        created_at: item.created_at,
-        answered_at: item.answered_at,
-        answered_by_email: item.answered_by_email,
-        question_text: (item.questions as any)?.question_text || '',
-        section_title: (item.questions as any)?.sections?.title || ''
-      })) as Clarification[];
+      const transformedData = (data || []).map(item => {
+        const question = item.questions as any;
+        const section = question?.sections;
+        
+        return {
+          id: item.id,
+          clarification_id: item.id,
+          submission_id: '', // Will be populated when needed
+          prompt_text: item.prompt_text,
+          edited_prompt_text: item.edited_prompt_text,
+          response_text: item.response_text,
+          status: item.status,
+          suggested_by: 'agent', // Default value
+          created_at: item.created_at,
+          answered_at: item.answered_at,
+          answered_by_email: item.answered_by_email,
+          question_text: question?.question_text || '',
+          section_title: section?.title || ''
+        };
+      }) as Clarification[];
 
       return transformedData;
     },
@@ -186,21 +179,89 @@ export function ClarificationsTab() {
     setSelectedSubmissionId(null);
   };
 
-  // Placeholder functions for clarification actions
-  const handleApprove = (id: string) => {
-    console.log('Approve clarification:', id);
+  // Updated placeholder functions for clarification actions
+  const handleApprove = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('clarifications')
+        .update({ status: 'approved' })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error approving clarification:', error);
+        toast.error('Failed to approve clarification');
+        return;
+      }
+
+      toast.success('Clarification approved');
+      refetchClarifications();
+    } catch (error) {
+      console.error('Error approving clarification:', error);
+      toast.error('Failed to approve clarification');
+    }
   };
 
-  const handleDeny = (id: string) => {
-    console.log('Deny clarification:', id);
+  const handleDeny = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('clarifications')
+        .update({ status: 'denied' })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error denying clarification:', error);
+        toast.error('Failed to deny clarification');
+        return;
+      }
+
+      toast.success('Clarification denied');
+      refetchClarifications();
+    } catch (error) {
+      console.error('Error denying clarification:', error);
+      toast.error('Failed to deny clarification');
+    }
   };
 
-  const handleEdit = (id: string, text: string) => {
-    console.log('Edit clarification:', id, text);
+  const handleEdit = async (id: string, text: string) => {
+    try {
+      const { error } = await supabase
+        .from('clarifications')
+        .update({ edited_prompt_text: text })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error editing clarification:', error);
+        toast.error('Failed to update clarification');
+        return;
+      }
+
+      toast.success('Clarification updated');
+      refetchClarifications();
+    } catch (error) {
+      console.error('Error editing clarification:', error);
+      toast.error('Failed to update clarification');
+    }
   };
 
-  const handleMoveBackToReview = (id: string) => {
-    console.log('Move back to review:', id);
+  const handleMoveBackToReview = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('clarifications')
+        .update({ status: 'suggested' })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error moving clarification back to review:', error);
+        toast.error('Failed to move clarification back to review');
+        return;
+      }
+
+      toast.success('Clarification moved back to review');
+      refetchClarifications();
+    } catch (error) {
+      console.error('Error moving clarification back to review:', error);
+      toast.error('Failed to move clarification back to review');
+    }
   };
 
   return (
@@ -256,6 +317,9 @@ export function ClarificationsTab() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="suggested">Suggested</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="denied">Denied</SelectItem>
                   <SelectItem value="submitted_to_client">Submitted to Client</SelectItem>
                   <SelectItem value="answered">Answered</SelectItem>
                 </SelectContent>
@@ -294,6 +358,13 @@ export function ClarificationsTab() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
                     Failed to load clarifications. Please try again.
+                  </AlertDescription>
+                </Alert>
+              ) : proposalClarifications.length === 0 ? (
+                <Alert>
+                  <FileText className="h-4 w-4" />
+                  <AlertDescription>
+                    No clarifications found for this proposal{filterStatus ? ` with status "${filterStatus}"` : ""}.
                   </AlertDescription>
                 </Alert>
               ) : (
