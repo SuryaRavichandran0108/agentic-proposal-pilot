@@ -65,49 +65,55 @@ export function ProposalBuilderTab() {
   const { data: proposals, isLoading } = useQuery({
     queryKey: ['proposals-for-submission'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('proposals')
-        .select(`
+  const { data, error } = await supabase
+    .from('proposals')
+    .select(`
+      id,
+      title,
+      client_name,
+      status,
+      due_date,
+      created_at,
+      sections (
+        id,
+        title,
+        order_index,
+        questions (
           id,
-          title,
-          client_name,
-          status,
-          due_date,
-          created_at,
-          sections (
-            id,
-            title,
-            order_index,
-            questions (
-              id,
-              question_text,
-              requires_review,
-              reviewed,
-              confidence_score,
-              answers (*),
-              clarifications (*)
-            )
-          )
-        `)
-        .in('status', ['review', 'submitted'])
-        .order('created_at', { ascending: false });
+          question_text,
+          requires_review,
+          reviewed,
+          confidence_score,
+          answers (*),
+          clarifications (*)
+        )
+      )
+    `)
+    .in('status', ['review', 'submitted'])
+    .order('created_at', { ascending: false });
 
-      if (error) throw error;
+  if (error) throw error;
 
-      const normalized = (data as ProposalPreview[]).map(p => ({
-        ...p,
-        sections: p.sections.map(s => ({
+  const normalized = data?.map((p) => ({
+    ...p,
+    sections: Array.isArray(p.sections)
+      ? p.sections.map((s) => ({
           ...s,
-          questions: s.questions.map(q => ({
-            ...q,
-            answers: Array.isArray(q.answers) ? q.answers : q.answers ? [q.answers] : [],
-            clarifications: Array.isArray(q.clarifications) ? q.clarifications : q.clarifications ? [q.clarifications] : [],
-          }))
+          questions: Array.isArray(s.questions)
+            ? s.questions.map((q) => ({
+                ...q,
+                answers: Array.isArray(q.answers) ? q.answers : q.answers ? [q.answers] : [],
+                clarifications: Array.isArray(q.clarifications) ? q.clarifications : q.clarifications ? [q.clarifications] : [],
+              }))
+            : [],
         }))
-      }));
+      : [],
+  }));
 
-      return normalized;
-    }
+  return normalized as ProposalPreview[];
+};
+
+
   });
 
   const submitProposalMutation = useMutation({
