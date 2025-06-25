@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -69,6 +68,11 @@ export function ClarificationsTab() {
   const [isSubmissionModalOpen, setIsSubmissionModalOpen] = useState(false);
   const [selectedSubmissionId, setSelectedSubmissionId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<{
+    approvedClarifications: Clarification[];
+    draftMessage: string;
+  } | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch all proposals
   const { data: proposals, isLoading: isProposalsLoading, error: proposalsError } = useQuery({
@@ -182,9 +186,112 @@ export function ClarificationsTab() {
   const handleCloseSubmissionModal = () => {
     setIsSubmissionModalOpen(false);
     setSelectedSubmissionId(null);
+    setPendingSubmission(null);
   };
 
-  // Updated placeholder functions for clarification actions
+  // Check if all clarifications are approved and trigger modal
+  const checkAndTriggerSubmissionModal = async (updatedClarifications: Clarification[]) => {
+    const allClarifications = updatedClarifications.filter(c => 
+      ['suggested', 'approved', 'denied'].includes(c.status)
+    );
+    const approvedClarifications = allClarifications.filter(c => c.status === 'approved');
+    
+    // Only trigger if we have approved clarifications and no pending ones
+    if (approvedClarifications.length > 0 && 
+        allClarifications.every(c => c.status === 'approved') &&
+        !pendingSubmission) {
+      
+      // Generate draft message
+      const draftMessage = generateSubmissionDraftMessage(approvedClarifications, selectedProposal);
+      
+      setPendingSubmission({
+        approvedClarifications,
+        draftMessage
+      });
+      setIsSubmissionModalOpen(true);
+    }
+  };
+
+  const generateSubmissionDraftMessage = (clarifications: Clarification[], proposal: Proposal | undefined) => {
+    if (!proposal) return '';
+    
+    const clarificationList = clarifications
+      .map((c, index) => `${index + 1}. ${c.edited_prompt_text || c.prompt_text}`)
+      .join('\n\n');
+
+    return `Subject: Clarification Request - ${proposal.proposal_title}
+
+Dear ${proposal.client_name} Team,
+
+We are preparing our response to your RFP for "${proposal.proposal_title}" and would appreciate your clarification on the following points:
+
+${clarificationList}
+
+Please provide your responses at your earliest convenience. Your clarifications will help us deliver the most accurate and comprehensive proposal possible.
+
+Thank you for your time and consideration.
+
+Best regards,
+[Your Name]
+[Your Company]`;
+  };
+
+  // Handle submission to client
+  const handleSubmitToClient = async (options: { passcode?: string }) => {
+    if (!pendingSubmission || !selectedProposal) return;
+
+    setIsSubmitting(true);
+    
+    try {
+      // Create clarification submission record
+      const { data: submission, error: submissionError } = await supabase
+        .from('clarification_submissions')
+        .insert({
+          proposal_id: selectedProposal.proposal_id,
+          user_id: (await supabase.auth.getUser()).data.user?.id || '',
+          draft_message: pendingSubmission.draftMessage,
+          method: 'email',
+          passcode: options.passcode || null,
+          submitted_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (submissionError) {
+        console.error('Error creating submission:', submissionError);
+        toast.error('Failed to create submission');
+        return;
+      }
+
+      // Update all approved clarifications
+      const clarificationIds = pendingSubmission.approvedClarifications.map(c => c.id);
+      const { error: updateError } = await supabase
+        .from('clarifications')
+        .update({
+          status: 'submitted_to_client',
+          submission_id: submission.id
+        })
+        .in('id', clarificationIds);
+
+      if (updateError) {
+        console.error('Error updating clarifications:', updateError);
+        toast.error('Failed to update clarifications');
+        return;
+      }
+
+      toast.success(`Clarifications submitted to ${selectedProposal.client_name}`);
+      refetchClarifications();
+      handleCloseSubmissionModal();
+      
+    } catch (error) {
+      console.error('Error submitting clarifications:', error);
+      toast.error('Failed to submit clarifications');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Updated approval handler
   const handleApprove = async (id: string) => {
     try {
       const { error } = await supabase
@@ -199,7 +306,12 @@ export function ClarificationsTab() {
       }
 
       toast.success('Clarification approved');
-      refetchClarifications();
+      
+      // Refetch and check if all are approved
+      const { data: updatedClarifications } = await refetchClarifications();
+      if (updatedClarifications) {
+        await checkAndTriggerSubmissionModal(updatedClarifications);
+      }
     } catch (error) {
       console.error('Error approving clarification:', error);
       toast.error('Failed to approve clarification');
@@ -354,6 +466,30 @@ export function ClarificationsTab() {
                 </div>
               </div>
 
+              {/* Show ready-to-submit banner if all clarifications are approved */}
+              {proposalClarifications.length > 0 && 
+               proposalClarifications.filter(c => ['suggested', 'approved', 'denied'].includes(c.status)).every(c => c.status === 'approved') &&
+               !pendingSubmission && (
+                <Alert className="border-green-200 bg-green-50">
+                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    All clarifications approved! 
+                    <Button 
+                      variant="link" 
+                      className="ml-2 p-0 h-auto text-green-700 underline"
+                      onClick={() => {
+                        const approvedClarifications = proposalClarifications.filter(c => c.status === 'approved');
+                        const draftMessage = generateSubmissionDraftMessage(approvedClarifications, selectedProposal);
+                        setPendingSubmission({ approvedClarifications, draftMessage });
+                        setIsSubmissionModalOpen(true);
+                      }}
+                    >
+                      Submit to Client
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {isLoading ? (
                 <div className="flex items-center justify-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -405,7 +541,13 @@ export function ClarificationsTab() {
       <SubmissionDraftModal
         isOpen={isSubmissionModalOpen}
         onClose={handleCloseSubmissionModal}
+        onConfirm={handleSubmitToClient}
         submissionId={selectedSubmissionId || ''}
+        draftMessage={pendingSubmission?.draftMessage || ''}
+        clarificationsCount={pendingSubmission?.approvedClarifications.length || 0}
+        isConfirming={isSubmitting}
+        proposalTitle={selectedProposal?.proposal_title || ''}
+        clientName={selectedProposal?.client_name || ''}
       />
     </div>
   );
