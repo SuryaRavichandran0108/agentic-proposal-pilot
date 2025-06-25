@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,21 +72,31 @@ export function UploadRFPTab() {
         metadata: { file_name: file.name, file_size: file.size }
       });
 
-      // Trigger ParserAgent via edge function
-      const { error: parserError } = await supabase.functions.invoke('parser-agent', {
-        body: {
-          proposal_id: proposal.id,
-          file_id: fileRecord.id
+      // Trigger ParserAgent via direct fetch to edge function
+      try {
+        const response = await fetch('/functions/v1/parser-agent', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            proposal_id: proposal.id,
+            file_id: fileRecord.id
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-      });
 
-      if (parserError) {
-        console.error('Error triggering ParserAgent:', parserError);
-        toast.error('Failed to trigger ParserAgent: ' + parserError.message);
-        return;
+        const result = await response.json();
+        console.log('ParserAgent triggered successfully:', result);
+        toast.success('RFP uploaded successfully! ParserAgent is processing...');
+      } catch (parserError: any) {
+        console.error('Failed to trigger ParserAgent:', parserError);
+        console.warn('ParserAgent trigger failed, but proposal was created successfully');
+        toast.success('RFP uploaded successfully! Parser processing may be delayed.');
       }
-
-      toast.success('RFP uploaded successfully! ParserAgent is processing...');
       
       // Reset form
       setTitle('');
