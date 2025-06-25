@@ -43,10 +43,46 @@ serve(async (req) => {
     }
 
     // Call the database function to process all pending ContentAgent logs
-    const { data: processResult, error: processingError } = await supabase.rpc('process_pending_content_agent_logs');
+    let processResult;
+    try {
+      console.log('Calling process_pending_content_agent_logs database function...');
+      
+      const { data, error: processingError } = await supabase.rpc('process_pending_content_agent_logs');
+      
+      if (processingError) {
+        console.error('Error processing pending logs:', processingError);
+        
+        // Update any pending logs to failed status
+        if (agent_log_id) {
+          await supabase
+            .from('agent_logs')
+            .update({ 
+              metadata: { 
+                status: 'failed',
+                error_message: processingError.message,
+                failed_at: new Date().toISOString()
+              }
+            })
+            .eq('id', agent_log_id);
+        }
+        
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Failed to process pending content agent logs: ${processingError.message}`
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500
+          }
+        );
+      }
 
-    if (processingError) {
-      console.error('Error processing pending logs:', processingError);
+      processResult = data;
+      console.log('Successfully processed all pending ContentAgent logs:', processResult);
+      
+    } catch (rpcError) {
+      console.error('RPC call failed:', rpcError);
       
       // Update any pending logs to failed status
       if (agent_log_id) {
@@ -55,17 +91,24 @@ serve(async (req) => {
           .update({ 
             metadata: { 
               status: 'failed',
-              error_message: processingError.message,
+              error_message: rpcError.message,
               failed_at: new Date().toISOString()
             }
           })
           .eq('id', agent_log_id);
       }
       
-      throw new Error('Failed to process pending content agent logs');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `RPC call failed: ${rpcError.message}`
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500
+        }
+      );
     }
-
-    console.log('Successfully processed all pending ContentAgent logs:', processResult);
 
     // Check if all questions now have answers and optionally update proposal status
     const { data: remainingQuestions, error: checkError } = await supabase
@@ -107,14 +150,18 @@ serve(async (req) => {
 
     console.log(`ContentAgent completed: processed ${answersGenerated} answers`);
 
+    // TODO: Extend this section later to add additional post-processing logic
+    // such as notifications, webhooks, or other business logic
+
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Content generation completed',
+        message: 'Content generation completed successfully',
         data: {
           proposal_id,
           answers_generated: answersGenerated,
-          trigger_source: trigger_source || 'unknown'
+          trigger_source: trigger_source || 'unknown',
+          rpc_result: processResult
         }
       }),
       {
