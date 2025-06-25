@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,14 +33,18 @@ interface Proposal {
 
 interface Clarification {
   id: string;
+  clarification_id: string;
   submission_id: string;
   prompt_text: string;
   edited_prompt_text: string | null;
   response_text: string | null;
-  status: string;
+  status: 'suggested' | 'approved' | 'denied' | 'submitted_to_client' | 'answered';
+  suggested_by: string;
   created_at: string;
   answered_at: string | null;
   answered_by_email: string | null;
+  question_text: string;
+  section_title: string;
 }
 
 interface Submission {
@@ -71,7 +76,7 @@ export function ClarificationsTab() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('proposals')
-        .select('id as proposal_id, proposal_title, client_name');
+        .select('id as proposal_id, title as proposal_title, client_name');
 
       if (error) {
         console.error('Error fetching proposals:', error);
@@ -87,10 +92,28 @@ export function ClarificationsTab() {
     queryFn: async () => {
       if (!selectedProposalId) return [];
 
+      // Get submission IDs for the proposal first
+      const { data: submissionIds, error: submissionError } = await supabase
+        .from('clarification_submissions')
+        .select('id')
+        .eq('proposal_id', selectedProposalId);
+
+      if (submissionError) {
+        console.error('Error fetching submissions:', submissionError);
+        throw submissionError;
+      }
+
+      if (!submissionIds || submissionIds.length === 0) {
+        return [];
+      }
+
+      const submissionIdsList = submissionIds.map(sub => sub.id);
+
       let query = supabase
         .from('clarifications')
         .select(`
           id,
+          id as clarification_id,
           submission_id,
           prompt_text,
           edited_prompt_text,
@@ -98,17 +121,18 @@ export function ClarificationsTab() {
           status,
           created_at,
           answered_at,
-          answered_by_email
+          answered_by_email,
+          questions!inner(
+            question_text,
+            sections!inner(
+              title
+            )
+          )
         `)
-        .in('submission_id', 
-          supabase
-            .from('clarification_submissions')
-            .select('id')
-            .eq('proposal_id', selectedProposalId)
-        );
+        .in('submission_id', submissionIdsList);
 
       if (filterStatus) {
-        query = query.eq('status', filterStatus);
+        query = query.eq('status', filterStatus as 'suggested' | 'approved' | 'denied' | 'submitted_to_client' | 'answered');
       }
 
       const { data, error } = await query;
@@ -117,7 +141,25 @@ export function ClarificationsTab() {
         console.error('Error fetching clarifications:', error);
         throw error;
       }
-      return data as Clarification[];
+
+      // Transform the data to match our interface
+      const transformedData = data?.map(item => ({
+        id: item.id,
+        clarification_id: item.clarification_id,
+        submission_id: item.submission_id,
+        prompt_text: item.prompt_text,
+        edited_prompt_text: item.edited_prompt_text,
+        response_text: item.response_text,
+        status: item.status,
+        suggested_by: 'agent', // Default value
+        created_at: item.created_at,
+        answered_at: item.answered_at,
+        answered_by_email: item.answered_by_email,
+        question_text: (item.questions as any)?.question_text || '',
+        section_title: (item.questions as any)?.sections?.title || ''
+      })) || [];
+
+      return transformedData as Clarification[];
     },
     enabled: !!selectedProposalId,
   });
@@ -155,7 +197,7 @@ export function ClarificationsTab() {
             </div>
             <div className="flex items-center gap-2">
               <Button
-                onClick={refetchClarifications}
+                onClick={() => refetchClarifications()}
                 variant="outline"
                 size="sm"
                 disabled={isLoading}
@@ -260,7 +302,7 @@ export function ClarificationsTab() {
       <SubmissionDraftModal
         isOpen={isSubmissionModalOpen}
         onClose={handleCloseSubmissionModal}
-        submissionId={selectedSubmissionId}
+        submissionId={selectedSubmissionId || ''}
       />
     </div>
   );
