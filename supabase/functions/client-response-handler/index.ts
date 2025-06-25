@@ -30,7 +30,7 @@ serve(async (req) => {
     // Verify submission exists and is valid
     const { data: submission, error: submissionError } = await supabase
       .from('clarification_submissions')
-      .select('id, expires_at')
+      .select('id, expires_at, proposal_id')
       .eq('id', submission_id)
       .single();
 
@@ -107,13 +107,35 @@ serve(async (req) => {
       }
     }
 
+    // After successful clarification updates, trigger content-agent
+    try {
+      console.log(`Triggering content-agent for proposal: ${submission.proposal_id}`);
+      
+      const { error: contentAgentError } = await supabase.functions.invoke('content-agent', {
+        body: {
+          proposal_id: submission.proposal_id,
+          submission_id: submission_id
+        }
+      });
+
+      if (contentAgentError) {
+        console.error('Failed to trigger content-agent:', contentAgentError);
+        // Don't throw error - we don't want to fail the client response submission
+      } else {
+        console.log('Successfully triggered content-agent');
+      }
+    } catch (triggerError) {
+      // Log error but don't fail the client response submission
+      console.error('Error triggering content-agent:', triggerError);
+    }
+
     // Log the response submission
     const { error: logError } = await supabase
       .from('agent_logs')
       .insert({
         agent_name: 'client_response_handler',
         action: 'responses_submitted',
-        proposal_id: null, // We don't have direct access to proposal_id here
+        proposal_id: submission.proposal_id,
         triggered_by_user_id: null, // This is a client submission
         metadata: {
           submission_id,
