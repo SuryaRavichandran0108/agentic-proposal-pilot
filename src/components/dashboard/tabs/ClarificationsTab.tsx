@@ -250,12 +250,12 @@ export function ClarificationsTab() {
 
             <div>
               <Label htmlFor="status-filter">Filter by Status</Label>
-              <Select onValueChange={setFilterStatus}>
+              <Select onValueChange={(value) => setFilterStatus(value === 'all' ? null : value)}>
                 <SelectTrigger id="status-filter">
                   <SelectValue placeholder="All Statuses" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Statuses</SelectItem>
+                  <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="submitted_to_client">Submitted to Client</SelectItem>
                   <SelectItem value="answered">Answered</SelectItem>
                 </SelectContent>
