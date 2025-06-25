@@ -1,11 +1,10 @@
-
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +17,8 @@ interface Answer {
   answer_text: string;
   generated_by: string;
   version_number: number;
+  created_at: string;
+  question_id: string;
 }
 
 interface Clarification {
@@ -90,24 +91,29 @@ export function ProposalBuilderTab() {
         `)
         .in('status', ['review', 'submitted'])
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      return data as ProposalPreview[];
+
+      const normalized = (data as ProposalPreview[]).map(p => ({
+        ...p,
+        sections: p.sections.map(s => ({
+          ...s,
+          questions: s.questions.map(q => ({
+            ...q,
+            answers: Array.isArray(q.answers) ? q.answers : q.answers ? [q.answers] : [],
+            clarifications: Array.isArray(q.clarifications) ? q.clarifications : q.clarifications ? [q.clarifications] : [],
+          }))
+        }))
+      }));
+
+      return normalized;
     }
   });
 
   const submitProposalMutation = useMutation({
-    mutationFn: async ({ 
-      proposalId, 
-      submittedTo, 
-      format 
-    }: { 
-      proposalId: string; 
-      submittedTo: string; 
-      format: 'PDF' | 'DOCX' | 'ZIP' 
-    }) => {
+    mutationFn: async ({ proposalId, submittedTo, format }: { proposalId: string; submittedTo: string; format: 'PDF' | 'DOCX' | 'ZIP' }) => {
       const { data, error } = await supabase.functions.invoke('submission-agent', {
-        body: { 
+        body: {
           proposal_id: proposalId,
           submitted_by_user_id: profile?.id,
           submitted_to: submittedTo,
@@ -131,7 +137,6 @@ export function ProposalBuilderTab() {
 
   const downloadDraftMutation = useMutation({
     mutationFn: async ({ proposalId, format }: { proposalId: string; format: string }) => {
-      // Mock download functionality
       const proposal = proposals?.find(p => p.id === proposalId);
       if (!proposal) throw new Error('Proposal not found');
 
@@ -142,8 +147,8 @@ export function ProposalBuilderTab() {
           title: section.title,
           questions: section.questions.map(q => ({
             question: q.question_text,
-            answer: q.answers && q.answers.length > 0 ? q.answers[0].answer_text : 'No answer provided',
-            clarification: q.clarifications && q.clarifications.length > 0 ? q.clarifications[0].answer_text : null
+            answer: Array.isArray(q.answers) && q.answers.length > 0 ? q.answers[0].answer_text : 'No answer provided',
+            clarification: Array.isArray(q.clarifications) && q.clarifications.length > 0 ? q.clarifications[0].answer_text : null
           }))
         }))
       };
@@ -169,14 +174,14 @@ export function ProposalBuilderTab() {
     const questionsWithAnswers = allQuestions.filter(q => Array.isArray(q.answers) && q.answers.length > 0);
     const questionsNeedingReview = allQuestions.filter(q => q.requires_review);
     const reviewedQuestions = questionsNeedingReview.filter(q => q.reviewed);
-    
+
     return {
       total: allQuestions.length,
       answered: questionsWithAnswers.length,
       needingReview: questionsNeedingReview.length,
       reviewed: reviewedQuestions.length,
-      isComplete: questionsWithAnswers.length === allQuestions.length && 
-                  reviewedQuestions.length === questionsNeedingReview.length
+      isComplete: questionsWithAnswers.length === allQuestions.length &&
+        reviewedQuestions.length === questionsNeedingReview.length
     };
   };
 
@@ -188,7 +193,7 @@ export function ProposalBuilderTab() {
 
   const confirmSubmission = () => {
     if (!selectedProposal || !submissionEmail.trim()) return;
-    
+
     submitProposalMutation.mutate({
       proposalId: selectedProposal.id,
       submittedTo: submissionEmail.trim(),
@@ -221,7 +226,7 @@ export function ProposalBuilderTab() {
         {proposals?.map((proposal) => {
           const status = getProposalCompletionStatus(proposal);
           const isSubmitted = proposal.status === 'submitted';
-          
+
           return (
             <Card key={proposal.id} className="overflow-hidden">
               <CardHeader>
@@ -257,9 +262,8 @@ export function ProposalBuilderTab() {
                   </div>
                 </div>
               </CardHeader>
-              
+
               <CardContent className="space-y-6">
-                {/* Progress Overview */}
                 <div className="grid grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-600">{status.answered}/{status.total}</div>
@@ -281,13 +285,12 @@ export function ProposalBuilderTab() {
                   </div>
                 </div>
 
-                {/* Proposal Preview */}
                 <div className="space-y-4">
                   <h3 className="text-lg font-semibold flex items-center gap-2">
                     <FileText className="h-5 w-5" />
                     Proposal Preview
                   </h3>
-                  
+
                   {proposal.sections?.sort((a, b) => a.order_index - b.order_index).map((section) => (
                     <div key={section.id} className="border rounded-lg p-4">
                       <h4 className="font-medium text-gray-900 mb-3">{section.title}</h4>
@@ -298,8 +301,8 @@ export function ProposalBuilderTab() {
                               {question.question_text}
                             </div>
                             <div className="text-sm text-gray-600 mb-2">
-                              {Array.isArray(question.answers) && question.answers.length > 0 
-                                ? question.answers[0].answer_text 
+                              {Array.isArray(question.answers) && question.answers.length > 0
+                                ? question.answers[0].answer_text
                                 : 'No answer provided'}
                             </div>
                             <div className="flex items-center gap-2">
@@ -331,7 +334,6 @@ export function ProposalBuilderTab() {
                   ))}
                 </div>
 
-                {/* Action Buttons */}
                 {!isSubmitted && (
                   <div className="flex items-center justify-between pt-4 border-t">
                     <div className="flex items-center space-x-4">
@@ -345,8 +347,8 @@ export function ProposalBuilderTab() {
                           <SelectItem value="ZIP">ZIP Archive</SelectItem>
                         </SelectContent>
                       </Select>
-                      
-                      <Button 
+
+                      <Button
                         variant="outline"
                         onClick={() => downloadDraftMutation.mutate({ proposalId: proposal.id, format: selectedFormat })}
                         disabled={downloadDraftMutation.isPending}
@@ -355,8 +357,8 @@ export function ProposalBuilderTab() {
                         Download Draft
                       </Button>
                     </div>
-                    
-                    <Button 
+
+                    <Button
                       disabled={!status.isComplete}
                       onClick={() => handleSubmitProposal(proposal)}
                       className="bg-green-600 hover:bg-green-700"
@@ -393,7 +395,6 @@ export function ProposalBuilderTab() {
         )}
       </div>
 
-      {/* Submission Confirmation Dialog */}
       <Dialog open={showSubmissionDialog} onOpenChange={setShowSubmissionDialog}>
         <DialogContent>
           <DialogHeader>
@@ -402,7 +403,7 @@ export function ProposalBuilderTab() {
               Are you ready to submit "{selectedProposal?.title}" to the client?
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div>
               <Label htmlFor="submission-email">Client Email</Label>
@@ -414,7 +415,7 @@ export function ProposalBuilderTab() {
                 placeholder="client@example.com"
               />
             </div>
-            
+
             <div>
               <Label htmlFor="submission-format">Format</Label>
               <Select value={selectedFormat} onValueChange={(value) => setSelectedFormat(value as 'PDF' | 'DOCX' | 'ZIP')}>
