@@ -108,6 +108,7 @@ serve(async (req) => {
     }
 
     // After successful clarification updates, trigger content-agent
+    let contentAgentTriggered = false;
     try {
       console.log(`Triggering content-agent for proposal: ${submission.proposal_id}`);
       
@@ -139,6 +140,7 @@ serve(async (req) => {
           // Don't throw error - we don't want to fail the client response submission
         } else {
           console.log('Successfully triggered content-agent:', contentAgentData);
+          contentAgentTriggered = true;
         }
       }
     } catch (triggerError) {
@@ -159,7 +161,8 @@ serve(async (req) => {
           clarifications_updated: updatedCount,
           total_clarifications: clarifications.length,
           contact_email: contact_email || null,
-          response_timestamp: currentTimestamp
+          response_timestamp: currentTimestamp,
+          content_agent_triggered: contentAgentTriggered
         }
       });
 
@@ -177,7 +180,8 @@ serve(async (req) => {
           submission_id,
           clarifications_updated: updatedCount,
           total_clarifications: clarifications.length,
-          submitted_at: currentTimestamp
+          submitted_at: currentTimestamp,
+          content_agent_triggered: contentAgentTriggered
         }
       }),
       {
