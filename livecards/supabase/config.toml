@@ -1,0 +1,6 @@
+project_id = "livecards"
+
+[functions.ingest-sheet]
+# The Apps Script trigger cannot present a Supabase JWT, so the function
+# authenticates callers itself (shared secret or user JWT).
+verify_jwt = false
