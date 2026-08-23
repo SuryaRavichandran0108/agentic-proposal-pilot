@@ -85,13 +85,16 @@ Sign up, create a deck, and open it.
 
 ### 5. Connect the sheet
 
-Give your sheet a header row — by default `Term` and `Definition`, in any
-order, alongside any other columns you want:
+Give your sheet a header row — by default `Front` and `Back`, in any order,
+alongside any other columns you want:
 
-| Term | Definition |
+| Front | Back |
 | --- | --- |
-| mitochondria | The powerhouse of the cell |
-| golgi apparatus | Packages proteins for transport |
+| attention head | One parallel subspace of a multi-head attention layer |
+| KV cache | Stored keys/values so past tokens aren't recomputed each step |
+
+The header names are configurable per deck, so `Term`/`Definition` or anything
+else works too — just set them in the panel.
 
 In the deck's **Google Sheet source** panel, paste the spreadsheet URL and save.
 The panel then shows a `WEBHOOK_URL` and a `WEBHOOK_SECRET`.
@@ -130,7 +133,7 @@ content changing — instead of on a timer. There's no interval to tune, and no
 requests when nothing is happening. Google offers no "sheet was viewed" hook,
 and you wouldn't want one: opening the sheet doesn't change the cards.
 
-**Why no LLM?** With `Term` and `Definition` columns, mapping is deterministic:
+**Why no LLM?** With `Front` and `Back` columns, mapping is deterministic:
 your text goes in verbatim, there's nothing to hallucinate, and it costs
 nothing. If you ever want to ingest freeform prose instead, the seam to add it
 is `buildRecords()` in `sync.ts` — everything downstream works on

@@ -61,8 +61,8 @@ export function SheetSourcePanel({ deckId }: { deckId: string }) {
 
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [sheetName, setSheetName] = useState("Sheet1");
-  const [termHeader, setTermHeader] = useState("Term");
-  const [definitionHeader, setDefinitionHeader] = useState("Definition");
+  const [termHeader, setTermHeader] = useState("Front");
+  const [definitionHeader, setDefinitionHeader] = useState("Back");
   const [idHeader, setIdHeader] = useState("");
 
   // Populate the form once the saved source loads.
@@ -143,7 +143,7 @@ export function SheetSourcePanel({ deckId }: { deckId: string }) {
             <CardDescription>
               {source
                 ? `Last synced ${formatRelativeTime(source.last_synced_at)}`
-                : "Point this deck at a sheet with Term and Definition columns."}
+                : "Point this deck at a sheet with Front and Back columns."}
             </CardDescription>
           </div>
 
@@ -203,21 +203,21 @@ export function SheetSourcePanel({ deckId }: { deckId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="term-header">Term column header</Label>
+              <Label htmlFor="term-header">Front column header</Label>
               <Input
                 id="term-header"
                 value={termHeader}
                 onChange={(event) => setTermHeader(event.target.value)}
-                placeholder="Term"
+                placeholder="Front"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="definition-header">Definition column header</Label>
+              <Label htmlFor="definition-header">Back column header</Label>
               <Input
                 id="definition-header"
                 value={definitionHeader}
                 onChange={(event) => setDefinitionHeader(event.target.value)}
-                placeholder="Definition"
+                placeholder="Back"
               />
             </div>
           </div>

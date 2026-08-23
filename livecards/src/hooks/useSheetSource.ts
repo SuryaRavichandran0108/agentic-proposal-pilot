@@ -51,8 +51,8 @@ export function useSaveSheetSource(deckId: string) {
         user_id: userData.user.id,
         spreadsheet_id: extractSpreadsheetId(input.spreadsheetId),
         sheet_name: input.sheetName.trim() || "Sheet1",
-        term_header: input.termHeader.trim() || "Term",
-        definition_header: input.definitionHeader.trim() || "Definition",
+        term_header: input.termHeader.trim() || "Front",
+        definition_header: input.definitionHeader.trim() || "Back",
         id_header: input.idHeader?.trim() || null,
         archive_removed: input.archiveRemoved,
       };

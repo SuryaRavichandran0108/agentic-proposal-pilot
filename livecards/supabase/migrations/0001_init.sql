@@ -29,8 +29,8 @@ create table if not exists public.sheet_sources (
   spreadsheet_id   text not null,
   sheet_name       text not null default 'Sheet1',
   -- Header names to look for. Matching is case- and whitespace-insensitive.
-  term_header      text not null default 'Term',
-  definition_header text not null default 'Definition',
+  term_header      text not null default 'Front',
+  definition_header text not null default 'Back',
   -- Optional stable-ID column. When present it survives row reordering and
   -- deletion; when absent we fall back to the sheet row number.
   id_header        text,
