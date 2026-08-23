@@ -29,7 +29,10 @@ equivalent — the ingestion is idempotent, so running it twice changes nothing.
 | `supabase/functions/ingest-sheet/` | The webhook: Google auth, sheet reading, diffing, writing. |
 | `supabase/functions/ingest-sheet/sync.ts` | Pure column-resolution and diff logic. No I/O, so it's directly testable. |
 | `supabase/migrations/0001_init.sql` | Schema, RLS policies, Realtime publication. |
+| `supabase/functions/ingest-sheet/bundled.ts` | Generated single-file build of the above, for dashboard deploys. |
 | `src/` | Vite + React + Tailwind front end. |
+| `vercel.json` | SPA rewrites, so deep links survive a refresh. |
+| `scripts/` | Icon generation and the function bundler. |
 | `tests/sync.test.mjs` | Tests for the diff logic — `npm run test:sync`. |
 
 ## Setup
@@ -62,18 +65,35 @@ Step 5 is the one that's easy to miss — without it the function gets a 403.
 
 ### 3. Deploy the function
 
+With the CLI:
+
 ```sh
 supabase secrets set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat path/to/key.json)"
 supabase functions deploy ingest-sheet
 ```
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically.
+**Without the CLI**, use the dashboard instead:
 
-The function sets `verify_jwt = false` (see `supabase/config.toml`) because
-Apps Script can't present a Supabase JWT. It authenticates callers itself: the
-sheet uses a per-deck shared secret, the app uses your signed-in user token.
+1. **Edge Functions -> Deploy a new function -> Via Editor**, name it
+   `ingest-sheet`.
+2. Paste the contents of `supabase/functions/ingest-sheet/bundled.ts` — a
+   generated single-file build of the three source modules, since the editor
+   takes one file. Regenerate it with `npm run bundle:function` after changing
+   any source module.
+3. Turn **off** "Verify JWT with legacy secret" for this function.
+4. **Edge Functions -> Secrets**, add `GOOGLE_SERVICE_ACCOUNT_JSON` with the
+   entire contents of the downloaded key file as the value.
+
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically
+either way.
+
+JWT verification has to be off because Apps Script can't present a Supabase
+JWT. The function authenticates callers itself: the sheet uses a per-deck
+shared secret, the app uses your signed-in user token.
 
 ### 4. Run the app
+
+Locally:
 
 ```sh
 cp .env.example .env      # fill in your project URL and anon key
@@ -81,7 +101,20 @@ npm install
 npm run dev
 ```
 
+Or deploy it, which is what you want if you plan to use it from a phone as
+well as a laptop. On Vercel: import the repository, set **Root Directory** to
+`livecards`, and add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as
+environment variables. `vercel.json` already handles the SPA rewrites, without
+which a refresh on `/deck/:id` returns a 404.
+
+Both values are safe to expose — they're the public anon credentials, and row
+level security is what protects the data. Never put the `service_role` key in
+frontend environment variables.
+
 Sign up, create a deck, and open it.
+
+On iOS, **Share -> Add to Home Screen** installs it as a standalone app with
+its own icon; the manifest and touch icons are already wired up.
 
 ### 5. Connect the sheet
 
@@ -145,9 +178,10 @@ keystroke and easy to do by accident. Archiving makes it recoverable.
 ## Tests
 
 ```sh
-npm run test:sync   # diff logic: dedupe, updates, archive/restore, edge cases
-npx tsc -b          # typecheck
-npm run build       # production build
+npm run test:sync         # diff logic: dedupe, updates, archive/restore, edge cases
+npx tsc -b                # typecheck
+npm run build             # production build
+npm run bundle:function   # regenerate the single-file Edge Function build
 ```
 
 ## Limits worth knowing

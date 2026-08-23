@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
-    "test:sync": "tsc supabase/functions/ingest-sheet/sync.ts --outDir tests/.build --module esnext --target es2022 --moduleResolution bundler --skipLibCheck && node tests/sync.test.mjs"
+    "test:sync": "tsc supabase/functions/ingest-sheet/sync.ts --outDir tests/.build --module esnext --target es2022 --moduleResolution bundler --skipLibCheck && node tests/sync.test.mjs",
+    "bundle:function": "node scripts/bundle-function.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.2",
